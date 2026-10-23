@@ -1,11 +1,11 @@
 import type { Entry, Food, Goal, Macros, MealType, Profile, Recipe, Settings } from '../types';
 import { parse } from './util';
 
-export const MEALS: { id: MealType; label: string; icon: string }[] = [
-  { id: 'breakfast', label: 'Завтрак', icon: '🌅' },
-  { id: 'lunch', label: 'Обед', icon: '🍲' },
-  { id: 'dinner', label: 'Ужин', icon: '🌙' },
-  { id: 'snack', label: 'Перекусы', icon: '🍎' },
+export const MEALS: { id: MealType; label: string }[] = [
+  { id: 'breakfast', label: 'Завтрак' },
+  { id: 'lunch', label: 'Обед' },
+  { id: 'dinner', label: 'Ужин' },
+  { id: 'snack', label: 'Перекусы' },
 ];
 
 export const ACTIVITY: { value: number; label: string; hint: string }[] = [

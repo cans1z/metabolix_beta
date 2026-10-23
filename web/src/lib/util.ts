@@ -36,5 +36,7 @@ export const uid = (): string =>
     : Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 export const r0 = (n: number): number => Math.round(n);
+/** Целое с разделением разрядов: 2 009. */
+export const n0 = (n: number): string => Math.round(n).toLocaleString('ru-RU');
 export const r1 = (n: number): number => Math.round(n * 10) / 10;
 export const clamp = (n: number, min: number, max: number): number => Math.min(max, Math.max(min, n));

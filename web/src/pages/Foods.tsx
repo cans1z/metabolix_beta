@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BarcodeModal, FoodCardModal, FoodFormModal, FoodPicker } from '../components/food';
 import { RecipeModal } from '../components/RecipeModal';
+import { Icon } from '../components/icons';
 import { useStore } from '../store';
 import type { Food, Recipe } from '../types';
 
@@ -22,23 +23,27 @@ export function Foods() {
           </button>
         </div>
       )}
-      <div className="toolbar">
-        <h2>Продукты</h2>
-        <div className="grow" />
-        <button className="btn" onClick={() => setScan(true)}>
-          ▥ Штрихкод
-        </button>
-        {authed && (
-          <>
-            <button className="btn" onClick={() => setRecipe({})}>
-              + Блюдо
-            </button>
-            <button className="btn primary" onClick={() => setForm({})}>
-              + Продукт
-            </button>
-          </>
-        )}
-      </div>
+      <header className="page-head">
+        <h1>Продукты</h1>
+        <div className="toolbar">
+          <button className="btn" onClick={() => setScan(true)}>
+            <Icon name="barcode" size={18} />
+            Штрихкод
+          </button>
+          {authed && (
+            <>
+              <button className="btn" onClick={() => setRecipe({})}>
+                <Icon name="plus" size={16} />
+                Блюдо
+              </button>
+              <button className="btn primary" onClick={() => setForm({})}>
+                <Icon name="plus" size={16} />
+                Продукт
+              </button>
+            </>
+          )}
+        </div>
+      </header>
       <div className="card">
         <FoodPicker
           onPick={setCard}

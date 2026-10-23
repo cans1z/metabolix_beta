@@ -1,12 +1,23 @@
 import { useState } from 'react';
 import { AmountPicker, FoodCardModal, FoodPicker } from '../components/food';
-import { Field, MacroBar, Modal, Ring } from '../components/ui';
+import { Icon } from '../components/icons';
+import { Field, MacroBar, Meter, Modal } from '../components/ui';
 import { MEALS, macrosFor, sumEntries, targetsFor } from '../lib/nutrition';
-import { addDays, fmtDate, r0, today } from '../lib/util';
+import { addDays, clamp, n0, parse, r0, today } from '../lib/util';
 import { useStore } from '../store';
 import type { Entry, Food, MealType } from '../types';
 
 const GLASS = 250;
+
+function dayTitle(date: string) {
+  const d = parse(date);
+  const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long' });
+  const label = date === today() ? 'Сегодня' : date === addDays(today(), -1) ? 'Вчера' : '';
+  return {
+    eyebrow: label ? `${label}, ${weekday}` : weekday[0].toUpperCase() + weekday.slice(1),
+    title: d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }),
+  };
+}
 
 export function Diary() {
   const { state, removeEntry, updateEntry, copyMeal, addWater } = useStore();
@@ -20,109 +31,148 @@ export function Diary() {
   const target = targetsFor(state.profile!, state.settings);
   const dayEntries = state.entries.filter((e) => e.date === date);
   const total = sumEntries(dayEntries);
-  const left = r0(target.kcal - total.kcal);
+  const left = target.kcal - total.kcal;
   const water = state.water[date] ?? 0;
+  const goal = state.settings.waterGoal;
+  const filled = Math.floor(water / GLASS);
+  const cups = Math.max(filled, clamp(Math.ceil(goal / GLASS), 1, 16));
+  const head = dayTitle(date);
 
   return (
     <div className="page">
-      <div className="date-nav">
-        <button className="icon-btn" onClick={() => setDate(addDays(date, -1))} aria-label="Предыдущий день">
-          ‹
-        </button>
-        <label className="date-label">
-          {fmtDate(date)}
-          <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
-        </label>
-        <button className="icon-btn" onClick={() => setDate(addDays(date, 1))} aria-label="Следующий день">
-          ›
-        </button>
-      </div>
-
-      <div className="card summary">
-        <Ring value={total.kcal} max={target.kcal}>
-          <b className="ring-num">{Math.abs(left)}</b>
-          <span className="muted small">{left >= 0 ? 'ккал осталось' : 'ккал перебор'}</span>
-        </Ring>
-        <div className="grow">
-          <div className="muted small">
-            Съедено <b>{r0(total.kcal)}</b> из {target.kcal} ккал
-          </div>
-          <MacroBar label="Белки" value={total.protein} max={target.protein} color="var(--protein)" />
-          <MacroBar label="Жиры" value={total.fat} max={target.fat} color="var(--fat)" />
-          <MacroBar label="Углеводы" value={total.carbs} max={target.carbs} color="var(--carbs)" />
+      <header className="page-head">
+        <div>
+          <div className="eyebrow">{head.eyebrow}</div>
+          <h1>{head.title}</h1>
         </div>
-      </div>
+        <div className="day-nav">
+          {date !== today() && (
+            <button className="btn small" onClick={() => setDate(today())}>
+              К сегодня
+            </button>
+          )}
+          <button className="icon-btn" onClick={() => setDate(addDays(date, -1))} aria-label="Предыдущий день">
+            <Icon name="left" />
+          </button>
+          <label className="icon-btn date-pick" title="Выбрать дату">
+            <Icon name="calendar" />
+            <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} />
+          </label>
+          <button className="icon-btn" onClick={() => setDate(addDays(date, 1))} aria-label="Следующий день">
+            <Icon name="right" />
+          </button>
+        </div>
+      </header>
 
-      {MEALS.map((meal) => {
-        const entries = dayEntries.filter((e) => e.meal === meal.id);
-        return (
-          <div className="card" key={meal.id}>
-            <div className="card-head">
-              <h3>
-                {meal.icon} {meal.label}
-              </h3>
-              <span className="muted">{r0(sumEntries(entries).kcal)} ккал</span>
+      <div className="diary-grid">
+        <aside className="side">
+          <section className="panel">
+            <div className="panel-title">Калории</div>
+            <div className="big-number">
+              {n0(Math.abs(left))}
+              <span>{left >= 0 ? 'ккал осталось' : 'ккал сверх нормы'}</span>
             </div>
-            <div className="list">
-              {entries.map((e) => {
-                const m = macrosFor(e.food, e.grams);
-                return (
-                  <div className="list-row" key={e.id} onClick={() => setEditing(e)}>
-                    <div className="grow">
-                      <div>{e.food.name}</div>
-                      <div className="muted small">
-                        {e.grams} {e.food.unit === 'ml' ? 'мл' : 'г'} · Б {r0(m.protein)} · Ж {r0(m.fat)} · У{' '}
-                        {r0(m.carbs)}
-                      </div>
-                    </div>
-                    <b>{r0(m.kcal)}</b>
-                    <button
-                      className="icon-btn"
-                      title="Удалить"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        removeEntry(e.id);
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
+            <Meter value={total.kcal} max={target.kcal} color="var(--accent)" />
+            <div className="equation">
+              <span>
+                <b>{n0(target.kcal)}</b>
+                норма
+              </span>
+              <span className="op">−</span>
+              <span>
+                <b>{n0(total.kcal)}</b>
+                съедено
+              </span>
+              <span className="op">=</span>
+              <span>
+                <b>{n0(left)}</b>
+                остаток
+              </span>
             </div>
-            <div className="card-foot">
-              <button className="btn primary" onClick={() => setAdding(meal.id)}>
-                + Добавить
-              </button>
-              {entries.length > 0 && (
-                <button className="btn" onClick={() => setCopying(meal.id)}>
-                  Копировать на другой день
+            <div className="macros">
+              <MacroBar label="Белки" value={total.protein} max={target.protein} color="var(--protein)" />
+              <MacroBar label="Жиры" value={total.fat} max={target.fat} color="var(--fat)" />
+              <MacroBar label="Углеводы" value={total.carbs} max={target.carbs} color="var(--carbs)" />
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-title">
+              Вода
+              <span className="muted">
+                {n0(water)} из {n0(goal)} мл
+              </span>
+            </div>
+            <div className="cups">
+              {Array.from({ length: cups }, (_, i) => (
+                <button
+                  key={i}
+                  className={'cup' + (i < filled ? ' full' : '')}
+                  // нажатие на последний полный стакан снимает его
+                  onClick={() => addWater(date, (i === filled - 1 ? i : i + 1) * GLASS - water)}
+                  aria-label={`${(i + 1) * GLASS} мл`}
+                >
+                  <Icon name="cup" size={22} />
                 </button>
-              )}
+              ))}
             </div>
-          </div>
-        );
-      })}
+            <div className="muted small">Один стакан — {GLASS} мл</div>
+          </section>
+        </aside>
 
-      <div className="card">
-        <div className="card-head">
-          <h3>💧 Вода</h3>
-          <span className="muted">
-            {water} / {state.settings.waterGoal} мл
-          </span>
-        </div>
-        <div className="bar">
-          <div
-            style={{ width: Math.min(100, (water / state.settings.waterGoal) * 100) + '%', background: 'var(--water)' }}
-          />
-        </div>
-        <div className="card-foot">
-          <button className="btn" onClick={() => addWater(date, -GLASS)} disabled={water === 0}>
-            − {GLASS} мл
-          </button>
-          <button className="btn primary" onClick={() => addWater(date, GLASS)}>
-            + {GLASS} мл
-          </button>
+        <div className="meals">
+          {MEALS.map((meal) => {
+            const entries = dayEntries.filter((e) => e.meal === meal.id);
+            return (
+              <section className="meal" key={meal.id}>
+                <header className="meal-head">
+                  <h2>{meal.label}</h2>
+                  {entries.length > 0 && <span className="muted">{n0(sumEntries(entries).kcal)} ккал</span>}
+                  <div className="grow" />
+                  {entries.length > 0 && (
+                    <button className="icon-btn" title="Копировать на другой день" onClick={() => setCopying(meal.id)}>
+                      <Icon name="copy" size={18} />
+                    </button>
+                  )}
+                  <button className="btn small" onClick={() => setAdding(meal.id)}>
+                    <Icon name="plus" size={16} />
+                    Добавить
+                  </button>
+                </header>
+                {entries.length === 0 ? (
+                  <p className="meal-empty">Ничего не записано</p>
+                ) : (
+                  <ul className="entries">
+                    {entries.map((e) => {
+                      const m = macrosFor(e.food, e.grams);
+                      return (
+                        <li key={e.id} onClick={() => setEditing(e)}>
+                          <div className="grow">
+                            <div className="entry-name">{e.food.name}</div>
+                            <div className="entry-meta">
+                              {e.grams} {e.food.unit === 'ml' ? 'мл' : 'г'} · Б {r0(m.protein)} · Ж {r0(m.fat)} · У{' '}
+                              {r0(m.carbs)}
+                            </div>
+                          </div>
+                          <span className="entry-kcal">{n0(m.kcal)}</span>
+                          <button
+                            className="icon-btn row-action"
+                            title="Удалить"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              removeEntry(e.id);
+                            }}
+                          >
+                            <Icon name="close" size={18} />
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Icon, Logo, type IconName } from './components/icons';
 import { Auth, Onboarding } from './pages/Auth';
 import { Diary } from './pages/Diary';
 import { Foods } from './pages/Foods';
@@ -8,11 +9,11 @@ import { useStore } from './store';
 
 type Tab = 'diary' | 'foods' | 'progress' | 'profile';
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'diary', label: 'Дневник', icon: '📖' },
-  { id: 'foods', label: 'Продукты', icon: '🥦' },
-  { id: 'progress', label: 'Прогресс', icon: '📈' },
-  { id: 'profile', label: 'Профиль', icon: '👤' },
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: 'diary', label: 'Дневник', icon: 'diary' },
+  { id: 'foods', label: 'Продукты', icon: 'foods' },
+  { id: 'progress', label: 'Прогресс', icon: 'progress' },
+  { id: 'profile', label: 'Профиль', icon: 'profile' },
 ];
 
 export function App() {
@@ -28,9 +29,14 @@ export function App() {
   if (!state.user) {
     // Гостю доступен только справочник продуктов.
     return state.guest ? (
-      <main className="guest">
-        <Foods />
-      </main>
+      <div className="app">
+        <header className="topbar">
+          <Logo />
+        </header>
+        <main>
+          <Foods />
+        </main>
+      </div>
     ) : (
       <Auth />
     );
@@ -39,17 +45,18 @@ export function App() {
 
   return (
     <div className="app">
-      <nav className="nav">
-        <div className="brand">
-          <span className="logo">M</span> <span className="brand-name">Metabolix</span>
-        </div>
-        {TABS.map((t) => (
-          <button key={t.id} className={'nav-item' + (tab === t.id ? ' active' : '')} onClick={() => setTab(t.id)}>
-            <span className="nav-icon">{t.icon}</span>
-            <span>{t.label}</span>
-          </button>
-        ))}
-      </nav>
+      <header className="topbar">
+        <Logo />
+        <nav className="nav">
+          {TABS.map((t) => (
+            <button key={t.id} className={'nav-item' + (tab === t.id ? ' active' : '')} onClick={() => setTab(t.id)}>
+              <Icon name={t.icon} />
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
+        <span className="topbar-user">{state.profile.name || state.user.name}</span>
+      </header>
       <main>
         {tab === 'diary' && <Diary />}
         {tab === 'foods' && <Foods />}

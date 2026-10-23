@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { clamp } from '../lib/util';
+import { Icon } from './icons';
 
 export function Modal(props: { title: string; onClose: () => void; children: ReactNode }) {
   return (
@@ -8,7 +9,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
         <div className="modal-head">
           <h3>{props.title}</h3>
           <button className="icon-btn" onClick={props.onClose} aria-label="Закрыть">
-            ✕
+            <Icon name="close" />
           </button>
         </div>
         {props.children}
@@ -95,49 +96,28 @@ export function Field(props: { label: string; children: ReactNode }) {
   );
 }
 
-export function Ring(props: { value: number; max: number; size?: number; children?: ReactNode }) {
-  const size = props.size ?? 160;
-  const stroke = 12;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const ratio = props.max > 0 ? props.value / props.max : 0;
+export function Meter(props: { value: number; max: number; color?: string; thin?: boolean }) {
+  const pct = props.max > 0 ? clamp((props.value / props.max) * 100, 0, 100) : 0;
+  const over = props.value > props.max;
   return (
-    <div className="ring" style={{ width: size, height: size }}>
-      <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={ratio > 1 ? 'var(--danger)' : 'var(--accent)'}
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - clamp(ratio, 0, 1))}
-          transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        />
-      </svg>
-      <div className="ring-center">{props.children}</div>
+    <div className={'meter' + (props.thin ? ' thin' : '')}>
+      <div style={{ width: pct + '%', background: over ? 'var(--danger)' : props.color }} />
     </div>
   );
 }
 
 export function MacroBar(props: { label: string; value: number; max: number; color: string }) {
-  const pct = props.max > 0 ? clamp((props.value / props.max) * 100, 0, 100) : 0;
   const left = Math.round(props.max - props.value);
   return (
-    <div className="macro">
-      <div className="macro-top">
-        <span>{props.label}</span>
-        <span>
-          <b>{Math.round(props.value)}</b> / {Math.round(props.max)} г
-        </span>
+    <div className="macro" title={left >= 0 ? `Осталось ${left} г` : `Сверх нормы на ${-left} г`}>
+      <div className="macro-name">
+        <i className="dot" style={{ background: props.color }} />
+        {props.label}
       </div>
-      <div className="bar">
-        <div style={{ width: pct + '%', background: props.color }} />
+      <div className="macro-val">
+        <b>{Math.round(props.value)}</b> / {Math.round(props.max)} г
       </div>
-      <div className="muted small">{left >= 0 ? `осталось ${left} г` : `перебор ${-left} г`}</div>
+      <Meter value={props.value} max={props.max} color={props.color} thin />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DEFAULT_PROFILE, ProfileForm } from '../components/ProfileForm';
+import { Logo } from '../components/icons';
 import { Field } from '../components/ui';
 import { useStore } from '../store';
 
@@ -20,10 +21,8 @@ export function Auth() {
   return (
     <div className="center-screen">
       <div className="card auth">
-        <div className="brand big">
-          <span className="logo">M</span> Metabolix
-        </div>
-        <div className="muted">Учёт калорий, белков, жиров и углеводов</div>
+        <Logo />
+        <p className="muted">Дневник питания: калории, белки, жиры и углеводы.</p>
         <h2>{title}</h2>
         <form
           className="form"

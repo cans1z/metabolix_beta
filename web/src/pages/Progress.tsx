@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { Icon } from '../components/icons';
 import { Field, Segmented, Stepper } from '../components/ui';
 import { ZERO, add, bmi, bmiLabel, sumEntries, targetsFor } from '../lib/nutrition';
-import { addDays, clamp, dateRange, fmtShort, parse, r0, r1, today } from '../lib/util';
+import { addDays, clamp, dateRange, fmtShort, n0, parse, r0, r1, today } from '../lib/util';
 import { useStore } from '../store';
 import type { Macros } from '../types';
 
@@ -17,7 +18,7 @@ function KcalChart(props: { days: string[]; data: Macros[]; target: number; metr
   const value = (m: Macros) => (metric === 'kcal' ? m.kcal : m.protein + m.fat + m.carbs);
   const max = Math.max(metric === 'kcal' ? target : 0, ...data.map(value), 1) * 1.1;
   const slot = (W - PAD * 2) / days.length;
-  const bw = clamp(slot * 0.6, 2, 36);
+  const bw = clamp(slot * 0.45, 2, 22);
   const y = (v: number) => H - 22 - (v / max) * (H - 30);
   const labelEvery = Math.ceil(days.length / 10);
   return (
@@ -128,9 +129,8 @@ export function Progress() {
 
   return (
     <div className="page">
-      <div className="toolbar">
-        <h2>Прогресс</h2>
-        <div className="grow" />
+      <header className="page-head">
+        <h1>Прогресс</h1>
         <Segmented
           value={period}
           options={[
@@ -140,7 +140,7 @@ export function Progress() {
           ]}
           onChange={setPeriod}
         />
-      </div>
+      </header>
       {period === 'custom' && (
         <div className="card grid2">
           <Field label="С">
@@ -167,9 +167,18 @@ export function Progress() {
         <KcalChart days={days} data={data} target={target.kcal} metric={metric} />
         {metric === 'macros' && (
           <div className="legend">
-            <span style={{ color: 'var(--protein)' }}>● белки</span>
-            <span style={{ color: 'var(--fat)' }}>● жиры</span>
-            <span style={{ color: 'var(--carbs)' }}>● углеводы</span>
+            <span>
+              <i className="dot" style={{ background: 'var(--protein)' }} />
+              белки
+            </span>
+            <span>
+              <i className="dot" style={{ background: 'var(--fat)' }} />
+              жиры
+            </span>
+            <span>
+              <i className="dot" style={{ background: 'var(--carbs)' }} />
+              углеводы
+            </span>
           </div>
         )}
         <div className="muted small">
@@ -177,8 +186,8 @@ export function Progress() {
         </div>
         <div className="tiles">
           <div className="tile">
-            <b>{r0(total.kcal / n)}</b>
-            <span>ккал · норма {target.kcal}</span>
+            <b>{n0(total.kcal / n)}</b>
+            <span>ккал · норма {n0(target.kcal)}</span>
           </div>
           <div className="tile">
             <b>{r0(total.protein / n)}</b>
@@ -218,7 +227,7 @@ export function Progress() {
                 <div className="grow">{fmtShort(w.date)}</div>
                 <b>{w.kg} кг</b>
                 <button className="icon-btn" title="Удалить" onClick={() => removeWeight(w.date)}>
-                  ✕
+                  <Icon name="close" size={18} />
                 </button>
               </div>
             ))}

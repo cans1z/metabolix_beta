@@ -3,6 +3,7 @@ import { MEALS, macrosFor, recipeToFood } from '../lib/nutrition';
 import { r0, r1, today, uid } from '../lib/util';
 import { useStore } from '../store';
 import type { Food, MealType } from '../types';
+import { Icon } from './icons';
 import { Field, Modal, Segmented, Stepper } from './ui';
 
 type Tab = 'all' | 'favorites' | 'recents' | 'recipes';
@@ -68,7 +69,7 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
                     props.onEditRecipe!(f.id.slice(7));
                   }}
                 >
-                  ✎
+                  <Icon name="edit" size={18} />
                 </button>
               )}
               <button
@@ -79,7 +80,7 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
                   toggleFavorite(f.id);
                 }}
               >
-                {state.favorites.includes(f.id) ? '★' : '☆'}
+                <Icon name="star" size={18} filled={state.favorites.includes(f.id)} />
               </button>
             </div>
           );

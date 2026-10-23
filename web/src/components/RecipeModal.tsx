@@ -4,6 +4,7 @@ import { r0, r1, uid } from '../lib/util';
 import { useStore } from '../store';
 import type { Recipe } from '../types';
 import { FoodPicker } from './food';
+import { Icon } from './icons';
 import { Field, Modal, Stepper } from './ui';
 
 export function RecipeModal(props: { recipe?: Recipe; onClose: () => void }) {
@@ -53,7 +54,7 @@ export function RecipeModal(props: { recipe?: Recipe; onClose: () => void }) {
                   title="Убрать"
                   onClick={() => setRecipe({ ...recipe, items: recipe.items.filter((_, k) => k !== i) })}
                 >
-                  ✕
+                  <Icon name="close" size={18} />
                 </button>
               </div>
             ))}

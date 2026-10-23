@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ProfileForm } from '../components/ProfileForm';
+import { Icon } from '../components/icons';
 import { Field, Segmented, Stepper, Toggle } from '../components/ui';
 import { MEALS, autoTargets, bmr, macrosFor, tdee } from '../lib/nutrition';
 import { addDays, r0, r1, today } from '../lib/util';
@@ -41,20 +42,22 @@ export function Profile() {
 
   return (
     <div className="page">
-      <div className="toolbar">
-        <h2>Профиль</h2>
-        <div className="grow" />
-        <span className="muted">{state.user?.email}</span>
+      <header className="page-head">
+        <div>
+          <div className="eyebrow">{state.user?.email}</div>
+          <h1>Профиль</h1>
+        </div>
         <button className="btn" onClick={logout}>
+          <Icon name="logout" size={18} />
           Выйти
         </button>
-      </div>
+      </header>
 
       <div className="card">
         <h3>Анкета</h3>
         <ProfileForm
           initial={profile}
-          submitLabel={saved ? 'Сохранено ✓' : 'Сохранить'}
+          submitLabel={saved ? 'Сохранено' : 'Сохранить'}
           onSubmit={(p) => {
             saveProfile(p);
             setSaved(true);
