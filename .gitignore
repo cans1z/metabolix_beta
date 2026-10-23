@@ -1,0 +1,18 @@
+# web
+node_modules/
+dist/
+
+# flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+*.iml
+.idea/
+local.properties
+.gradle/
+
+# misc
+.DS_Store
+.env
+.claude/
