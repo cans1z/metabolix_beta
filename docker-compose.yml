@@ -1,0 +1,72 @@
+# Весь проект одной командой: docker compose up --build
+# Веб и API: http://localhost:8080   Письма: http://localhost:8025
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: metabolix
+      POSTGRES_USER: metabolix
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-metabolix}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # 5433, потому что 5432 часто занят локальным Postgres. Снаружи компьютера порт недоступен.
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U metabolix -d metabolix"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    # Версия 7.2 — последняя под лицензией BSD; п. 5.8 ТЗ допускает только свободные лицензии.
+    image: redis:7.2-alpine
+    # Кэш и токены не должны забить память; AOF сохраняет сессии при перезапуске.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Ловит все письма сервера и показывает их в браузере. Настоящим адресатам ничего не уходит.
+  mailpit:
+    image: axllent/mailpit:v1.24
+    ports:
+      - "127.0.0.1:8025:8025"
+
+  api:
+    build: ./backend
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Postgres: Host=postgres;Database=metabolix;Username=metabolix;Password=${POSTGRES_PASSWORD:-metabolix}
+      ConnectionStrings__Redis: redis:6379
+      # Ключ по умолчанию работает только в Development: в Production сервер с ним не запустится.
+      Jwt__Key: ${JWT_KEY:-dev-only-key-do-not-use-in-production-0123456789}
+      Google__ClientIds__0: ${GOOGLE_CLIENT_ID:-}
+      Smtp__Host: mailpit
+      Smtp__Port: "1025"
+      Proxy__Trust: "true"
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build: ./web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  redis-data:
+  uploads:

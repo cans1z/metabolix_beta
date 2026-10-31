@@ -12,6 +12,11 @@ build/
 local.properties
 .gradle/
 
+# backend
+bin/
+obj/
+backend/Metabolix.Api/uploads/
+
 # misc
 .DS_Store
 .env
