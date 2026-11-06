@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../api.dart';
 import '../app_state.dart';
 import '../models.dart';
 import '../util.dart';
@@ -23,17 +26,53 @@ class _FoodPickerState extends State<FoodPicker> {
   static const _tabs = ['Все', 'Недавние', 'Избранное', 'Мои блюда'];
   int tab = 0;
   String query = '';
+  int page = 1;
+  int? _revision;
+  Timer? _debounce;
+  late AppState _app;
+  Future<({List<Food> items, bool more})>? _result;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _app = AppScope.of(context);
+    if (_revision != _app.catalogRevision) {
+      _revision = _app.catalogRevision;
+      page = 1;
+      _result = null;
+      if (tab == 0) _loadPage();
+    }
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _loadPage() {
+    _result = _app.searchFoods(query.trim(), page);
+  }
+
+  void _queryChanged(String value) {
+    _debounce?.cancel();
+    setState(() {
+      query = value;
+      page = 1;
+      _result = null;
+    });
+    if (tab == 0) {
+      _debounce = Timer(const Duration(milliseconds: 250), () => setState(_loadPage));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final recipes = app.recipes.map((r) => r.toFood()).toList();
-    final byId = {for (final f in app.foods) f.id: f, for (final f in recipes) f.id: f};
-    List<Food> ids(List<String> xs) => [for (final id in xs) if (byId[id] != null) byId[id]!];
     final source = switch (tab) {
-      0 => app.foods,
-      1 => ids(app.recents),
-      2 => ids(app.favorites),
+      1 => app.recents,
+      2 => [...app.favoriteFoods, ...recipes.where((food) => app.favorites.contains(food.id))],
       _ => recipes,
     };
     final q = query.trim().toLowerCase();
@@ -50,7 +89,7 @@ class _FoodPickerState extends State<FoodPicker> {
               border: OutlineInputBorder(),
               isDense: true,
             ),
-            onChanged: (v) => setState(() => query = v),
+            onChanged: _queryChanged,
           ),
         ),
         SingleChildScrollView(
@@ -58,49 +97,110 @@ class _FoodPickerState extends State<FoodPicker> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Row(
             children: [
-              for (var i = 0; i < _tabs.length; i++)
+              for (var i = 0; i < (app.authed ? _tabs.length : 1); i++)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
                     label: Text(_tabs[i]),
                     selected: tab == i,
-                    onSelected: (_) => setState(() => tab = i),
+                    onSelected: (_) => setState(() {
+                      _debounce?.cancel();
+                      tab = i;
+                      if (i == 0 && _result == null) {
+                        _loadPage();
+                      }
+                    }),
                   ),
                 ),
             ],
           ),
         ),
         Expanded(
-          child: list.isEmpty
-              ? const Center(child: Text('Ничего не найдено'))
-              : ListView.builder(
-                  itemCount: list.length,
-                  itemBuilder: (context, i) {
-                    final f = list[i];
-                    final fav = app.favorites.contains(f.id);
-                    return ListTile(
-                      title: Text(f.name),
-                      subtitle: Text(foodSubtitle(f)),
-                      onTap: () => widget.onPick(f),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (f.isRecipe && widget.onEditRecipe != null)
-                            IconButton(
-                              icon: const Icon(Icons.edit_outlined),
-                              onPressed: () => widget.onEditRecipe!(f.id.substring(7)),
-                            ),
-                          IconButton(
-                            icon: Icon(fav ? Icons.star : Icons.star_border, color: fav ? fatColor : null),
-                            onPressed: () => app.toggleFavorite(f.id),
+          child: tab != 0
+              ? _foodList(app, list)
+              : FutureBuilder(
+                  future: _result,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(snapshot.error is ApiException
+                                ? snapshot.error.toString()
+                                : 'Не удалось загрузить продукты'),
+                            TextButton(onPressed: () => setState(_loadPage), child: const Text('Повторить')),
+                          ],
+                        ),
+                      );
+                    }
+                    final result = snapshot.data!;
+                    return Column(
+                      children: [
+                        Expanded(child: _foodList(app, result.items)),
+                        if (page > 1 || result.more)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton(
+                                tooltip: 'Предыдущая страница',
+                                onPressed: page > 1 ? () => _changePage(-1) : null,
+                                icon: const Icon(Icons.chevron_left),
+                              ),
+                              Text('$page'),
+                              IconButton(
+                                tooltip: 'Следующая страница',
+                                onPressed: result.more ? () => _changePage(1) : null,
+                                icon: const Icon(Icons.chevron_right),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                      ],
                     );
                   },
                 ),
         ),
       ],
+    );
+  }
+
+  void _changePage(int delta) => setState(() {
+        page += delta;
+        _loadPage();
+      });
+
+  Widget _foodList(AppState app, List<Food> list) {
+    if (list.isEmpty) return const Center(child: Text('Ничего не найдено'));
+    return ListView.builder(
+      itemCount: list.length,
+      itemBuilder: (context, i) {
+        final f = list[i];
+        final fav = app.favorites.contains(f.id);
+        return ListTile(
+          title: Text(f.name),
+          subtitle: Text(foodSubtitle(f)),
+          onTap: () => widget.onPick(f),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (f.isRecipe && widget.onEditRecipe != null &&
+                  app.recipes.any((recipe) => recipe.id == f.id.substring(7)))
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: () => widget.onEditRecipe!(f.id.substring(7)),
+                ),
+              if (app.authed && f.id.isNotEmpty)
+                IconButton(
+                  icon: Icon(fav ? Icons.star : Icons.star_border, color: fav ? fatColor : null),
+                  onPressed: app.busy ? null : () => app.toggleFavorite(f),
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -217,6 +317,7 @@ class _FoodCard extends StatefulWidget {
 class _FoodCardState extends State<_FoodCard> {
   late double grams = widget.food.portion ?? 100;
   late MealType meal = widget.meal ?? MealType.breakfast;
+  final _entryId = entryUuid();
 
   @override
   Widget build(BuildContext context) {
@@ -256,18 +357,22 @@ class _FoodCardState extends State<_FoodCard> {
             ),
             const SizedBox(height: 14),
             FilledButton(
-              onPressed: () {
-                app.addEntry(widget.date, meal, food, grams);
-                Navigator.pop(context);
-              },
+              onPressed: app.busy || grams < 0.1 || grams > 20000
+                  ? null
+                  : () async {
+                      if (await app.addEntry(_entryId, widget.date, meal, food, grams) && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
               child: const Text('Добавить в дневник'),
             ),
-            if (food.custom)
+            if (food.custom && !food.isRecipe && food.id.isNotEmpty)
               TextButton(
-                onPressed: () {
-                  app.removeFood(food.id);
-                  Navigator.pop(context);
-                },
+                onPressed: app.busy
+                    ? null
+                    : () async {
+                        if (await app.removeFood(food.id) && context.mounted) Navigator.pop(context);
+                      },
                 child: Text('Удалить продукт', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
           ],
@@ -304,7 +409,20 @@ class _FoodFormScreenState extends State<FoodFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final valid = name.trim().isNotEmpty && kcal.trim().isNotEmpty;
+    final app = AppScope.of(context);
+    double? number(String value) => double.tryParse(value.trim().replaceAll(',', '.'));
+    bool inRange(String value, double min, double max, {bool optional = false}) {
+      if (optional && value.trim().isEmpty) return true;
+      final parsed = number(value);
+      return parsed != null && parsed >= min && parsed <= max;
+    }
+
+    final valid = name.trim().isNotEmpty &&
+        name.trim().length <= 200 &&
+        inRange(kcal, 0, 1000) &&
+        [protein, fat, carbs].every((v) => inRange(v, 0, 100, optional: true)) &&
+        inRange(portion, 0.1, 20000, optional: true) &&
+        (barcode.trim().isEmpty || RegExp(r'^\d{8,14}$').hasMatch(barcode.trim()));
     return Scaffold(
       appBar: AppBar(title: const Text('Новый продукт')),
       body: ListView(
@@ -335,17 +453,18 @@ class _FoodFormScreenState extends State<FoodFormScreen> {
             child: TextFormField(
               initialValue: barcode,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Штрихкод', border: OutlineInputBorder(), isDense: true),
-              onChanged: (v) => barcode = v,
+              decoration:
+                  const InputDecoration(labelText: 'Штрихкод', border: OutlineInputBorder(), isDense: true),
+              onChanged: (v) => setState(() => barcode = v),
             ),
           ),
           const SizedBox(height: 16),
           FilledButton(
-            onPressed: !valid
+            onPressed: !valid || app.busy
                 ? null
-                : () {
+                : () async {
                     final food = Food(
-                      id: uid(),
+                      id: '',
                       name: name.trim(),
                       kcal: parseNum(kcal),
                       protein: parseNum(protein),
@@ -356,8 +475,8 @@ class _FoodFormScreenState extends State<FoodFormScreen> {
                       barcode: barcode.trim().isEmpty ? null : barcode.trim(),
                       custom: true,
                     );
-                    AppScope.of(context).saveFood(food);
-                    Navigator.pop(context, food);
+                    final saved = await app.saveFood(food);
+                    if (saved != null && context.mounted) Navigator.pop(context, saved);
                   },
             child: const Text('Сохранить'),
           ),

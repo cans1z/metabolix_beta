@@ -24,7 +24,11 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
     {
         var normalized = Normalize(query ?? "");
 
-        // В кэше только общий справочник: он одинаков для всех. Личные карточки читаем из базы.
+        // Общие и личные карточки должны делить одну пагинацию. Личные результаты не кэшируем.
+        if (userId is { } ownerId)
+            return await QueryAsync(db.Foods.Where(f => f.OwnerId == null || f.OwnerId == ownerId),
+                normalized, page, pageSize);
+
         var key = $"search:{normalized}:{page}:{pageSize}";
         var result = await store.GetJsonAsync<PageDto<FoodDto>>(key);
         if (result == null)
@@ -33,12 +37,7 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
             await store.SetJsonAsync(key, result, CacheTtl);
         }
 
-        if (userId == null || page != 1) return result;
-
-        var own = await QueryAsync(db.Foods.Where(f => f.OwnerId == userId), normalized, 1, pageSize);
-        return own.Items.Count == 0
-            ? result
-            : result with { Items = [.. own.Items, .. result.Items], Total = result.Total + own.Total };
+        return result;
     }
 
     private static async Task<PageDto<FoodDto>> QueryAsync(IQueryable<Food> source, string normalized, int page, int pageSize)
@@ -46,24 +45,22 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
         var foods = source.AsNoTracking();
         var tsQuery = ToTsQuery(normalized);
 
-        IOrderedQueryable<Food> ordered;
-        if (tsQuery == null)
-        {
-            ordered = foods.OrderBy(f => f.Name);
-        }
-        else
+        var matching = foods;
+        if (tsQuery != null)
         {
             // Полнотекстовый поиск со словарём russian понимает падежи, триграммы прощают опечатки.
-            ordered = foods
-                .Where(f => f.SearchVector.Matches(EF.Functions.ToTsQuery("russian", tsQuery))
-                            || EF.Functions.TrigramsWordSimilarity(normalized, f.SearchName) > TypoThreshold)
-                .OrderByDescending(f => f.SearchVector.Rank(EF.Functions.ToTsQuery("russian", tsQuery)))
-                .ThenByDescending(f => EF.Functions.TrigramsWordSimilarity(normalized, f.SearchName))
-                .ThenBy(f => f.Name);
+            matching = foods.Where(f => f.SearchVector.Matches(EF.Functions.ToTsQuery("russian", tsQuery))
+                                        || EF.Functions.TrigramsWordSimilarity(normalized, f.SearchName) > TypoThreshold);
         }
 
-        var total = await ordered.CountAsync();
-        var items = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
+        var ordered = matching.OrderByDescending(f => f.OwnerId != null);
+        if (tsQuery != null)
+            ordered = ordered.ThenByDescending(f => f.SearchVector.Rank(EF.Functions.ToTsQuery("russian", tsQuery)))
+                .ThenByDescending(f => EF.Functions.TrigramsWordSimilarity(normalized, f.SearchName));
+
+        var total = await matching.CountAsync();
+        var items = await ordered.ThenBy(f => f.Name).ThenBy(f => f.Id)
+            .Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
         return new PageDto<FoodDto>(items.Select(f => f.ToDto()).ToList(), page, pageSize, total);
     }
 

@@ -23,9 +23,8 @@ class ProfileScreen extends StatelessWidget {
               ProfileForm(
                 initial: app.profile!,
                 submitLabel: 'Сохранить',
-                onSubmit: (p) {
-                  app.saveProfile(p);
-                  Navigator.pop(context);
+                onSubmit: (p) async {
+                  if (await app.saveProfile(p) && context.mounted) Navigator.pop(context);
                 },
               ),
             ],
@@ -35,44 +34,35 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// Экспорт дневника за 30 дней. Файл появится вместе с пакетом для
-  /// сохранения/шаринга; пока CSV копируется в буфер обмена.
+  /// Копирует в буфер CSV, сформированный сервером.
   Future<void> _exportCsv(BuildContext context, AppState app) async {
     final from = addDays(todayIso(), -29);
-    final rows = app.entries.where((e) => e.date.compareTo(from) >= 0).toList()
-      ..sort((a, b) => a.date.compareTo(b.date));
-    final csv = [
-      'Дата;Приём пищи;Продукт;Количество;Ккал;Белки;Жиры;Углеводы',
-      for (final e in rows)
-        [
-          e.date,
-          mealLabels[e.meal],
-          '"${e.food.name.replaceAll('"', '""')}"',
-          f0(e.grams),
-          f0(e.macros.kcal),
-          f1(e.macros.protein),
-          f1(e.macros.fat),
-          f1(e.macros.carbs),
-        ].join(';'),
-    ].join('\n');
+    final csv = await app.exportCsv(from, todayIso());
+    if (csv == null) return;
     await Clipboard.setData(ClipboardData(text: csv));
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('CSV за 30 дней скопирован в буфер (${rows.length} записей)')));
+        .showSnackBar(const SnackBar(content: Text('CSV за 30 дней скопирован в буфер')));
   }
 
-  Future<void> _reset(BuildContext context, AppState app) async {
-    final ok = await showDialog<bool>(
+  Future<void> _deleteAccount(BuildContext context, AppState app) async {
+    var password = '';
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Удалить все данные приложения?'),
+        title: const Text('Удалить аккаунт и его данные с сервера?'),
+        content: TextField(
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Пароль'),
+          onChanged: (value) => password = value,
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
           FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Удалить')),
         ],
       ),
     );
-    if (ok == true) app.resetAll();
+    if (confirmed == true) await app.deleteAccount(password);
   }
 
   @override
@@ -117,23 +107,17 @@ class ProfileScreen extends StatelessWidget {
                 StatTile(f0(auto.kcal), 'норма\nпо цели'),
               ]),
               FieldLabel('Белки — ${s.ratioProtein}% · ${f0(auto.protein)} г'),
-              Slider(
+              _SettingsSlider(
                 value: s.ratioProtein.toDouble(),
-                min: 10,
-                max: 60,
-                divisions: 10,
-                onChanged: (v) => app.updateSettings((s) {
+                onCommit: app.busy ? null : (v) => app.updateSettings((s) {
                   s.ratioProtein = v.round();
                   if (s.ratioProtein + s.ratioFat > 90) s.ratioFat = 90 - s.ratioProtein;
                 }),
               ),
               FieldLabel('Жиры — ${s.ratioFat}% · ${f0(auto.fat)} г'),
-              Slider(
+              _SettingsSlider(
                 value: s.ratioFat.toDouble(),
-                min: 10,
-                max: 60,
-                divisions: 10,
-                onChanged: (v) => app.updateSettings((s) {
+                onCommit: app.busy ? null : (v) => app.updateSettings((s) {
                   s.ratioFat = v.round();
                   if (s.ratioProtein + s.ratioFat > 90) s.ratioProtein = 90 - s.ratioFat;
                 }),
@@ -245,23 +229,47 @@ class ProfileScreen extends StatelessWidget {
             title: 'Данные',
             children: [
               OutlinedButton.icon(
-                onPressed: () => _exportCsv(context, app),
+                onPressed: app.busy ? null : () => _exportCsv(context, app),
                 icon: const Icon(Icons.file_download_outlined),
                 label: const Text('Экспорт дневника в CSV'),
               ),
-              OutlinedButton.icon(
-                onPressed: app.seedDemo,
-                icon: const Icon(Icons.auto_awesome_outlined),
-                label: const Text('Заполнить демо-данными'),
-              ),
               TextButton(
-                onPressed: () => _reset(context, app),
-                child: Text('Сбросить всё', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                onPressed: app.busy ? null : () => _deleteAccount(context, app),
+                child: Text('Удалить аккаунт', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _SettingsSlider extends StatefulWidget {
+  final double value;
+  final ValueChanged<double>? onCommit;
+
+  const _SettingsSlider({required this.value, required this.onCommit});
+
+  @override
+  State<_SettingsSlider> createState() => _SettingsSliderState();
+}
+
+class _SettingsSliderState extends State<_SettingsSlider> {
+  double? draft;
+
+  @override
+  Widget build(BuildContext context) {
+    return Slider(
+      value: (draft ?? widget.value).clamp(10.0, 60.0).toDouble(),
+      min: 10,
+      max: 60,
+      divisions: 10,
+      onChanged: widget.onCommit == null ? null : (value) => setState(() => draft = value),
+      onChangeEnd: (value) {
+        setState(() => draft = null);
+        widget.onCommit?.call(value);
+      },
     );
   }
 }

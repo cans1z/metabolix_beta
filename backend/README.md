@@ -7,12 +7,13 @@
 Весь проект, из корня репозитория (нужен запущенный Docker Desktop):
 
 ```bash
-docker compose up --build
+docker compose up --build -d --wait
 ```
 
 | Адрес | Что там |
 |---|---|
 | http://localhost:8080 | веб-версия |
+| http://localhost:8080/api/health | готовность API, PostgreSQL и Redis |
 | http://localhost:8080/scalar/v1 | документация API, где можно отправлять запросы прямо из браузера |
 | http://localhost:8025 | Mailpit: письма сервера, например код сброса пароля |
 

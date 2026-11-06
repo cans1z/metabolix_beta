@@ -1,17 +1,21 @@
-# metabolix
+# Metabolix для Android
 
-A new Flutter project.
+Flutter-клиент использует серверный REST API. Данные аккаунта сохраняются в PostgreSQL, а на устройстве сессия хранится в зашифрованном виде с ключом Android Keystore.
 
-## Getting Started
+1. Запустите `docker compose up --build -d --wait` из корня репозитория.
+2. Подключите телефон или запустите Android Emulator.
+3. Выполните `flutter run` в папке `mobile`.
 
-This project is a starting point for a Flutter application.
+Адрес по умолчанию для Android Emulator — `http://10.0.2.2:8080`. Для телефона в той же сети подставьте локальный IP компьютера, где запущен Docker:
 
-A few resources to get you started if this is your first Flutter project:
+```bash
+flutter run --dart-define=API_BASE_URL=http://192.168.1.10:8080
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+HTTP разрешён в отладочной сборке. Для release укажите HTTPS-адрес сервера, включая при необходимости префикс, без суффикса `/api`.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter build apk --dart-define=API_BASE_URL=https://metabolix.example.org
+```
+
+Для проверки зарегистрируйтесь, заполните анкету и добавьте запись в дневник. Выйдите и войдите снова с той же почтой. Запись должна загрузиться из API. Код восстановления пароля в локальном Docker-окружении виден в Mailpit по адресу http://localhost:8025.

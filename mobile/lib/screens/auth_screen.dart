@@ -4,9 +4,8 @@ import '../app_state.dart';
 import '../models.dart';
 import '../widgets/profile_form.dart';
 
-enum _Mode { login, register, forgot }
+enum _Mode { login, register, forgot, reset }
 
-// Сервера пока нет: вход имитируется локально, пароль никуда не сохраняется.
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
@@ -16,18 +15,59 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   _Mode mode = _Mode.login;
-  String email = '', password = '', name = '';
-  bool sent = false;
+  String email = '', code = '', name = '';
+  final password = TextEditingController();
+  bool acceptedTerms = false;
+
+  @override
+  void dispose() {
+    password.dispose();
+    super.dispose();
+  }
+
+  void _switchMode(_Mode next) {
+    password.clear();
+    setState(() {
+      mode = next;
+      code = '';
+      acceptedTerms = false;
+    });
+  }
+
+  Future<void> _submit(AppState app) async {
+    final secret = password.text;
+    password.clear();
+    setState(() {});
+    switch (mode) {
+      case _Mode.login:
+        await app.login(email, secret);
+      case _Mode.register:
+        await app.login(email, secret, name: name.trim(), acceptedTerms: acceptedTerms);
+      case _Mode.forgot:
+        if (await app.forgotPassword(email) && mounted) _switchMode(_Mode.reset);
+      case _Mode.reset:
+        if (await app.resetPassword(email, code, secret) && mounted) {
+          _switchMode(_Mode.login);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Пароль обновлён')),
+          );
+        }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final theme = Theme.of(context);
-    final valid = RegExp(r'\S+@\S+\.\S+').hasMatch(email) && (mode == _Mode.forgot || password.length >= 6);
+    final valid = RegExp(r'^\S+@\S+\.\S+$').hasMatch(email) &&
+        (mode == _Mode.forgot || password.text.length >= 6) &&
+        (mode != _Mode.register || acceptedTerms) &&
+        (mode != _Mode.reset || RegExp(r'^\d{6}$').hasMatch(code));
     final title = switch (mode) {
       _Mode.login => 'Вход',
       _Mode.register => 'Регистрация',
       _Mode.forgot => 'Восстановление доступа',
+      _Mode.reset => 'Новый пароль',
     };
     return Scaffold(
       body: SafeArea(
@@ -59,60 +99,66 @@ class _AuthScreenState extends State<AuthScreen> {
                     decoration: const InputDecoration(labelText: 'Электронная почта', border: OutlineInputBorder()),
                     onChanged: (v) => setState(() => email = v.trim()),
                   ),
+                  if (mode == _Mode.reset) ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Код из письма',
+                        helperText: 'Если адрес зарегистрирован, на него отправлен код',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => setState(() => code = v.trim()),
+                    ),
+                  ],
                   if (mode != _Mode.forgot) ...[
                     const SizedBox(height: 12),
                     TextField(
+                      controller: password,
                       obscureText: true,
                       decoration: const InputDecoration(
                         labelText: 'Пароль',
                         helperText: 'Не короче 6 символов',
                         border: OutlineInputBorder(),
                       ),
-                      onChanged: (v) => setState(() => password = v),
+                      onChanged: (_) => setState(() {}),
                     ),
                   ],
-                  if (sent && mode == _Mode.forgot)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: Text('Если адрес зарегистрирован, письмо уже в пути.'),
+                  if (mode == _Mode.register)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Согласен на обработку персональных данных'),
+                      value: acceptedTerms,
+                      onChanged: (value) => setState(() => acceptedTerms = value == true),
                     ),
                   const SizedBox(height: 16),
                   FilledButton(
-                    onPressed: !valid
-                        ? null
-                        : () => mode == _Mode.forgot ? setState(() => sent = true) : app.login(email, name.trim()),
-                    child: Text(switch (mode) {
+                    onPressed: !valid || app.busy ? null : () => _submit(app),
+                    child: Text(app.busy ? 'Подождите…' : switch (mode) {
                       _Mode.login => 'Войти',
                       _Mode.register => 'Создать аккаунт',
-                      _Mode.forgot => 'Отправить ссылку',
+                      _Mode.forgot => 'Отправить код',
+                      _Mode.reset => 'Сменить пароль',
                     }),
                   ),
-                  if (mode != _Mode.forgot) ...[
-                    const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: () => app.login('demo@gmail.com', 'Demo'),
-                      icon: const Icon(Icons.account_circle_outlined),
-                      label: const Text('Войти через Google'),
-                    ),
-                  ],
                   const SizedBox(height: 8),
                   if (mode == _Mode.login)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         TextButton(
-                            onPressed: () => setState(() => mode = _Mode.register), child: const Text('Регистрация')),
+                            onPressed: app.busy ? null : () => _switchMode(_Mode.register), child: const Text('Регистрация')),
                         TextButton(
-                            onPressed: () => setState(() => mode = _Mode.forgot), child: const Text('Забыли пароль?')),
+                            onPressed: app.busy ? null : () => _switchMode(_Mode.forgot), child: const Text('Забыли пароль?')),
                       ],
                     )
                   else
                     TextButton(
-                      onPressed: () => setState(() => mode = _Mode.login),
+                      onPressed: app.busy ? null : () => _switchMode(_Mode.login),
                       child: const Text('Уже есть аккаунт — войти'),
                     ),
                   TextButton(
-                    onPressed: app.loginGuest,
+                    onPressed: app.busy ? null : app.loginGuest,
                     child: Text('Посмотреть справочник продуктов без входа',
                         style: TextStyle(color: theme.hintColor), textAlign: TextAlign.center),
                   ),

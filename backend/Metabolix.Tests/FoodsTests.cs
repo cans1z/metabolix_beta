@@ -53,6 +53,28 @@ public class FoodsTests(ApiFixture api)
     }
 
     [Fact]
+    public async Task Search_pages_through_personal_and_shared_foods_together()
+    {
+        var user = await api.RegisterAsync();
+        foreach (var name in new[] { "Мой первый продукт", "Мой второй продукт" })
+        {
+            var created = await user.Http.PostAsJsonAsync("/api/foods", TestUser.Food(name));
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+
+        var first = await user.GetAsync<PageDto<FoodDto>>("/api/foods?pageSize=1");
+        var second = await user.GetAsync<PageDto<FoodDto>>("/api/foods?pageSize=1&page=2");
+        var third = await user.GetAsync<PageDto<FoodDto>>("/api/foods?pageSize=1&page=3");
+
+        Assert.True(Assert.Single(first.Items).Custom);
+        Assert.True(Assert.Single(second.Items).Custom);
+        Assert.False(Assert.Single(third.Items).Custom);
+        Assert.NotEqual(first.Items[0].Id, second.Items[0].Id);
+        Assert.Equal(first.Total, second.Total);
+        Assert.Equal(first.Total, third.Total);
+    }
+
+    [Fact]
     public async Task Custom_food_is_visible_only_to_its_owner()
     {
         var owner = await api.RegisterAsync();

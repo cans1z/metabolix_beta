@@ -58,20 +58,20 @@ class Food {
         'protein': protein,
         'fat': fat,
         'carbs': carbs,
-        'ml': ml,
+        'unit': ml ? 'ml' : 'g',
         'portion': portion,
         'barcode': barcode,
         'custom': custom,
       };
 
   factory Food.fromJson(Map<String, dynamic> j) => Food(
-        id: j['id'] as String,
+        id: j['id'] as String? ?? '',
         name: j['name'] as String,
         kcal: _d(j['kcal']),
         protein: _d(j['protein']),
         fat: _d(j['fat']),
         carbs: _d(j['carbs']),
-        ml: j['ml'] == true,
+        ml: j['unit'] == 'ml',
         portion: (j['portion'] as num?)?.toDouble(),
         barcode: j['barcode'] as String?,
         custom: j['custom'] == true,
@@ -127,20 +127,21 @@ class Entry {
   final MealType meal;
   final Food food;
   final double grams;
-  const Entry({required this.id, required this.date, required this.meal, required this.food, required this.grams});
+  final DateTime updatedAt;
+  const Entry({
+    required this.id, required this.date, required this.meal, required this.food,
+    required this.grams, required this.updatedAt,
+  });
 
   Macros get macros => food.macros(grams);
-  Entry copyWith({String? id, String? date, double? grams}) =>
-      Entry(id: id ?? this.id, date: date ?? this.date, meal: meal, food: food, grams: grams ?? this.grams);
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'date': date, 'meal': meal.name, 'food': food.toJson(), 'grams': grams};
   factory Entry.fromJson(Map<String, dynamic> j) => Entry(
         id: j['id'] as String,
         date: j['date'] as String,
         meal: MealType.values.byName(j['meal'] as String),
         food: Food.fromJson(j['food'] as Map<String, dynamic>),
         grams: _d(j['grams']),
+        updatedAt: DateTime.parse(j['updatedAt'] as String),
       );
 }
 
@@ -166,7 +167,7 @@ class Profile {
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'male': male,
+        'sex': male ? 'male' : 'female',
         'birthDate': birthDate,
         'height': height,
         'weight': weight,
@@ -177,7 +178,7 @@ class Profile {
 
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
         name: j['name'] as String? ?? '',
-        male: j['male'] != false,
+        male: j['sex'] != 'female',
         birthDate: j['birthDate'] as String? ?? '2000-01-01',
         height: _d(j['height']),
         weight: _d(j['weight']),
@@ -199,28 +200,26 @@ class Settings {
 
   Map<String, dynamic> toJson() => {
         'theme': theme,
-        'ratioProtein': ratioProtein,
-        'ratioFat': ratioFat,
+        'ratio': {'protein': ratioProtein, 'fat': ratioFat, 'carbs': ratioCarbs},
         'manualTargets': manualTargets?.toJson(),
         'waterGoal': waterGoal,
-        'remindMeal': remindMeal,
-        'remindWater': remindWater,
-        'remindWeight': remindWeight,
-        'remindTime': remindTime,
+        'reminders': {'meal': remindMeal, 'water': remindWater, 'weight': remindWeight, 'time': remindTime},
       };
 
   static Settings fromJson(Map<String, dynamic> j) {
     final s = Settings();
     s.theme = j['theme'] as String? ?? s.theme;
-    s.ratioProtein = (j['ratioProtein'] as num?)?.toInt() ?? s.ratioProtein;
-    s.ratioFat = (j['ratioFat'] as num?)?.toInt() ?? s.ratioFat;
+    final ratio = j['ratio'] as Map<String, dynamic>;
+    s.ratioProtein = ratio['protein'] as int;
+    s.ratioFat = ratio['fat'] as int;
     final m = j['manualTargets'];
     s.manualTargets = m == null ? null : Macros.fromJson(m as Map<String, dynamic>);
     s.waterGoal = (j['waterGoal'] as num?)?.toInt() ?? s.waterGoal;
-    s.remindMeal = j['remindMeal'] as bool? ?? s.remindMeal;
-    s.remindWater = j['remindWater'] as bool? ?? s.remindWater;
-    s.remindWeight = j['remindWeight'] as bool? ?? s.remindWeight;
-    s.remindTime = j['remindTime'] as String? ?? s.remindTime;
+    final reminders = j['reminders'] as Map<String, dynamic>;
+    s.remindMeal = reminders['meal'] as bool;
+    s.remindWater = reminders['water'] as bool;
+    s.remindWeight = reminders['weight'] as bool;
+    s.remindTime = reminders['time'] as String;
     return s;
   }
 }

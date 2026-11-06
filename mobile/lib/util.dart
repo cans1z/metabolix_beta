@@ -1,5 +1,3 @@
-import 'dart:math';
-
 String iso(DateTime d) =>
     '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
@@ -35,9 +33,6 @@ String fmtDate(String s) {
   if (s == addDays(t, 1)) return 'Завтра';
   return '${_weekdays[parseIso(s).weekday - 1]}, ${fmtShort(s)}';
 }
-
-final _rnd = Random();
-String uid() => '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}${_rnd.nextInt(1 << 32).toRadixString(36)}';
 
 String f0(num n) => n.round().toString();
 

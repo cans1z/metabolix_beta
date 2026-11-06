@@ -21,41 +21,30 @@ class FoodsScreen extends StatelessWidget {
   /// вместе с пакетом сканера (например, mobile_scanner).
   Future<void> _scan(BuildContext context) async {
     final app = AppScope.of(context);
-    final demo = app.foods.where((f) => f.barcode != null).take(3).toList();
-    final controller = TextEditingController();
+    var input = '';
     final code = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Штрихкод'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: controller,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Код с упаковки', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 8),
-            const Text('Для проверки:'),
-            Wrap(
-              spacing: 6,
-              children: [
-                for (final f in demo)
-                  ActionChip(label: Text(f.barcode!), onPressed: () => controller.text = f.barcode!),
-              ],
-            ),
-          ],
+        content: TextField(
+          onChanged: (value) => input = value.trim(),
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Код с упаковки', border: OutlineInputBorder()),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Найти')),
+          FilledButton(onPressed: () => Navigator.pop(context, input), child: const Text('Найти')),
         ],
       ),
     );
     if (code == null || code.isEmpty || !context.mounted) return;
-    final found = app.byBarcode(code);
+    if (!RegExp(r'^\d{8,14}$').hasMatch(code)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Введите от 8 до 14 цифр')));
+      return;
+    }
+    final found = await app.byBarcode(code);
+    if (!context.mounted || app.error != null) return;
     if (found != null) {
       showFoodCard(context, found);
       return;
@@ -80,7 +69,7 @@ class FoodsScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Штрихкод',
             icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => _scan(context),
+            onPressed: app.busy ? null : () => _scan(context),
           ),
           if (app.authed) ...[
             IconButton(
@@ -130,11 +119,11 @@ class RecipeScreen extends StatefulWidget {
 class _RecipeScreenState extends State<RecipeScreen> {
   // Работаем с копией, чтобы «назад» без сохранения ничего не меняло.
   late final Recipe recipe =
-      widget.recipe == null ? Recipe(id: uid()) : Recipe.fromJson(widget.recipe!.toJson());
+      widget.recipe == null ? Recipe(id: '') : Recipe.fromJson(widget.recipe!.toJson());
 
   Future<void> _addItem() async {
     final food = await showFoodPicker(context, title: 'Ингредиент');
-    if (food != null) setState(() => recipe.items.add(RecipeItem(food, food.portion ?? 100)));
+    if (food != null && mounted) setState(() => recipe.items.add(RecipeItem(food, food.portion ?? 100)));
   }
 
   @override
@@ -150,9 +139,8 @@ class _RecipeScreenState extends State<RecipeScreen> {
           if (widget.recipe != null)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              onPressed: () {
-                app.removeRecipe(recipe.id);
-                Navigator.pop(context);
+              onPressed: app.busy ? null : () async {
+                if (await app.removeRecipe(recipe.id) && context.mounted) Navigator.pop(context);
               },
             ),
         ],
@@ -221,12 +209,11 @@ class _RecipeScreenState extends State<RecipeScreen> {
           ],
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: !valid
+            onPressed: !valid || app.busy
                 ? null
-                : () {
+                : () async {
                     recipe.name = recipe.name.trim();
-                    app.saveRecipe(recipe);
-                    Navigator.pop(context);
+                    if (await app.saveRecipe(recipe) && context.mounted) Navigator.pop(context);
                   },
             child: const Text('Сохранить'),
           ),

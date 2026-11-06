@@ -11,19 +11,37 @@ import 'screens/progress_screen.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState();
-  await state.load();
   runApp(AppScope(state: state, child: const MetabolixApp()));
+  await state.load();
 }
 
-class MetabolixApp extends StatelessWidget {
+class MetabolixApp extends StatefulWidget {
   const MetabolixApp({super.key});
 
+  @override
+  State<MetabolixApp> createState() => _MetabolixAppState();
+}
+
+class _MetabolixAppState extends State<MetabolixApp> {
   static const _seed = Color(0xFF1F9D55);
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
+  int _lastErrorCount = 0;
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    final error = app.error;
+    if (error != null && app.errorCount != _lastErrorCount) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || app.startupError != null) return;
+        _messenger.currentState
+          ?..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(error)));
+      });
+    }
+    _lastErrorCount = app.errorCount;
     return MaterialApp(
+      scaffoldMessengerKey: _messenger,
       title: 'Metabolix',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(colorSchemeSeed: _seed, brightness: Brightness.light, useMaterial3: true),
@@ -47,6 +65,25 @@ class _Root extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
+    if (app.starting || app.startupError != null) {
+      return Scaffold(
+        body: Center(
+          child: app.starting
+              ? const CircularProgressIndicator()
+              : Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(app.startupError!, textAlign: TextAlign.center),
+                      FilledButton(onPressed: app.busy ? null : app.load, child: const Text('Повторить')),
+                      TextButton(onPressed: app.busy ? null : app.logout, child: const Text('Выйти')),
+                    ],
+                  ),
+                ),
+        ),
+      );
+    }
     if (!app.authed) {
       // Гостю доступен только справочник продуктов.
       return app.guest ? const FoodsScreen() : const AuthScreen();
@@ -63,8 +100,25 @@ class _Shell extends StatefulWidget {
   State<_Shell> createState() => _ShellState();
 }
 
-class _ShellState extends State<_Shell> {
+class _ShellState extends State<_Shell> with WidgetsBindingObserver {
   int index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) AppScope.of(context).refresh();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -178,7 +178,7 @@ class _ProgressScreenState extends State<ProgressScreen> {
               ),
               const SizedBox(height: 8),
               FilledButton.tonal(
-                onPressed: () => app.setWeight(today, weightInput),
+                onPressed: app.busy ? null : () => app.setWeight(today, weightInput),
                 child: const Text('Записать вес за сегодня'),
               ),
               for (final d in weightDates.reversed.take(5))
@@ -190,7 +190,8 @@ class _ProgressScreenState extends State<ProgressScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text('${f1(app.weights[d]!)} кг', style: theme.textTheme.titleSmall),
-                      IconButton(icon: const Icon(Icons.close, size: 18), onPressed: () => app.removeWeight(d)),
+                      IconButton(icon: const Icon(Icons.close, size: 18),
+                          onPressed: app.busy ? null : () => app.removeWeight(d)),
                     ],
                   ),
                 ),

@@ -45,7 +45,7 @@ class _DiaryScreenState extends State<DiaryScreen> {
   Future<void> _copy(MealType meal) async {
     final to = await _pickDate(addDays(date, 1));
     if (to == null || to == date || !mounted) return;
-    AppScope.of(context).copyMeal(date, meal, to);
+    if (!await AppScope.of(context).copyMeal(date, meal, to) || !mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text('${mealLabels[meal]} скопирован на ${fmtShort(to)}')));
   }
@@ -69,16 +69,18 @@ class _DiaryScreenState extends State<DiaryScreen> {
               AmountPicker(food: entry.food, grams: grams, onChanged: (g) => setSheet(() => grams = g)),
               const SizedBox(height: 12),
               FilledButton(
-                onPressed: () {
-                  AppScope.of(context).updateEntry(entry.id, grams);
-                  Navigator.pop(context);
+                onPressed: () async {
+                  if (await AppScope.of(context).updateEntry(entry.id, grams) && context.mounted) {
+                    Navigator.pop(context);
+                  }
                 },
                 child: const Text('Сохранить'),
               ),
               TextButton(
-                onPressed: () {
-                  AppScope.of(context).removeEntry(entry.id);
-                  Navigator.pop(context);
+                onPressed: () async {
+                  if (await AppScope.of(context).removeEntry(entry.id) && context.mounted) {
+                    Navigator.pop(context);
+                  }
                 },
                 child: Text('Удалить', style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ),
@@ -109,11 +111,16 @@ class _DiaryScreenState extends State<DiaryScreen> {
         title: TextButton(
           onPressed: () async {
             final d = await _pickDate(date);
-            if (d != null) setState(() => date = d);
+            if (d != null && mounted) setState(() => date = d);
           },
           child: Text(fmtDate(date), style: theme.textTheme.titleLarge),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Обновить дневник',
+            onPressed: app.busy ? null : app.refresh,
+          ),
           IconButton(
             icon: const Icon(Icons.chevron_right),
             onPressed: () => setState(() => date = addDays(date, 1)),
@@ -166,14 +173,14 @@ class _DiaryScreenState extends State<DiaryScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: water == 0 ? null : () => app.addWater(date, -_glass),
+                      onPressed: water == 0 || app.busy ? null : () => app.addWater(date, -_glass),
                       child: const Text('− $_glass мл'),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.tonal(
-                      onPressed: () => app.addWater(date, _glass),
+                      onPressed: app.busy ? null : () => app.addWater(date, _glass),
                       child: const Text('+ $_glass мл'),
                     ),
                   ),
@@ -208,7 +215,10 @@ class _DiaryScreenState extends State<DiaryScreen> {
               color: Theme.of(context).colorScheme.errorContainer,
               child: const Icon(Icons.delete_outline),
             ),
-            onDismissed: (_) => app.removeEntry(e.id),
+            confirmDismiss: (_) async {
+              await app.removeEntry(e.id);
+              return false;
+            },
             child: ListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,

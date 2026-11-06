@@ -1,246 +1,370 @@
-import 'dart:convert';
-import 'dart:math';
+import 'dart:developer' as developer;
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api.dart';
 import 'models.dart';
 import 'nutrition.dart';
-import 'seed_foods.dart';
 import 'util.dart';
 
-/// Всё состояние приложения. Пока сервера нет — хранится локально одним JSON.
+/// Состояние экранов в памяти. Данные аккаунта загружаются и меняются через API.
 class AppState extends ChangeNotifier {
-  static const _key = 'metabolix:v1';
-  SharedPreferences? _prefs;
+  final _api = ApiClient();
+  bool busy = false;
+  bool starting = true;
+  String? startupError;
+  String? error;
+  int errorCount = 0;
 
   String? userEmail;
   String userName = '';
   bool guest = false;
   Profile? profile;
-  List<Food> foods = List.of(seedFoods);
   List<Recipe> recipes = [];
   List<Entry> entries = [];
-  List<String> favorites = [];
-  List<String> recents = [];
-  Map<String, int> water = {}; // дата -> мл
-  Map<String, double> weights = {}; // дата -> кг
+  List<Food> favoriteFoods = [];
+  Set<String> favorites = {};
+  List<Food> recents = [];
+  Map<String, int> water = {};
+  Map<String, double> weights = {};
   Settings settings = Settings();
+  int catalogRevision = 0;
 
   bool get authed => userEmail != null;
   Macros get targets => settings.manualTargets ?? autoTargets(profile!, settings);
   List<Entry> entriesOn(String date) => entries.where((e) => e.date == date).toList();
 
-  Future<void> load() async {
-    _prefs = await SharedPreferences.getInstance();
-    final raw = _prefs!.getString(_key);
-    if (raw == null) return;
+  Future<Json> _object(String path) async => await _api.request('GET', path) as Json;
+
+  List<T> _list<T>(dynamic value, T Function(Json) parse) =>
+      (value as List).map((item) => parse(item as Json)).toList();
+
+  String _message(Object e, StackTrace stack) {
+    if (e is ApiException) return e.message;
+    if (e is PlatformException) return e.message ?? 'Не удалось открыть защищённое хранилище';
+    developer.log('Ошибка обработки ответа API', stackTrace: stack);
+    return 'Не удалось загрузить или сохранить данные';
+  }
+
+  Future<T?> _run<T>(Future<T> Function() action) async {
+    if (busy) return null;
+    busy = true;
+    error = null;
+    notifyListeners();
     try {
-      final j = jsonDecode(raw) as Map<String, dynamic>;
-      List<T> list<T>(String k, T Function(Map<String, dynamic>) f) =>
-          ((j[k] as List?) ?? []).map((e) => f(e as Map<String, dynamic>)).toList();
-      userEmail = j['userEmail'] as String?;
-      userName = j['userName'] as String? ?? '';
-      guest = j['guest'] == true;
-      profile = j['profile'] == null ? null : Profile.fromJson(j['profile'] as Map<String, dynamic>);
-      foods = list('foods', Food.fromJson);
-      if (foods.isEmpty) foods = List.of(seedFoods);
-      recipes = list('recipes', Recipe.fromJson);
-      entries = list('entries', Entry.fromJson);
-      favorites = List<String>.from(j['favorites'] as List? ?? []);
-      recents = List<String>.from(j['recents'] as List? ?? []);
-      water = (j['water'] as Map<String, dynamic>? ?? {}).map((k, v) => MapEntry(k, (v as num).toInt()));
-      weights = (j['weights'] as Map<String, dynamic>? ?? {}).map((k, v) => MapEntry(k, (v as num).toDouble()));
-      settings = Settings.fromJson(j['settings'] as Map<String, dynamic>? ?? {});
-    } catch (_) {
-      // повреждённые данные — начинаем с чистого состояния
+      return await action();
+    } catch (e, stack) {
+      if (!_api.hasSession && authed) _clearAccount();
+      error = _message(e, stack);
+      errorCount++;
+      return null;
+    } finally {
+      busy = false;
+      notifyListeners();
     }
   }
 
-  Map<String, dynamic> _toJson() => {
-        'userEmail': userEmail,
-        'userName': userName,
-        'guest': guest,
-        'profile': profile?.toJson(),
-        'foods': foods.map((e) => e.toJson()).toList(),
-        'recipes': recipes.map((e) => e.toJson()).toList(),
-        'entries': entries.map((e) => e.toJson()).toList(),
-        'favorites': favorites,
-        'recents': recents,
-        'water': water,
-        'weights': weights,
-        'settings': settings.toJson(),
-      };
+  Future<bool> _change(Future<void> Function() action) async =>
+      await _run(() async {
+        await action();
+        return true;
+      }) ??
+      false;
 
-  void _commit() {
+  Future<void> load() async {
+    if (busy) return;
+    starting = true;
+    startupError = null;
+    var restored = false;
+    final loaded = await _change(() async {
+      await _api.restore();
+      restored = true;
+      if (_api.hasSession) await _loadAccount();
+    });
+    starting = false;
+    if (!loaded && (_api.hasSession || !restored)) startupError = error;
     notifyListeners();
-    _prefs?.setString(_key, jsonEncode(_toJson()));
   }
 
-  // --- вход (имитация, сервера пока нет) ---
+  Future<void> _loadAccount() async {
+    final user = await _object('auth/me');
+    final result = await Future.wait([
+      _object('settings'),
+      _object('sync/pull'),
+      _object('favorites'),
+      _api.request('GET', 'recipes'),
+      _api.request('GET', 'foods/recent'),
+      if (user['hasProfile'] == true) _object('profile'),
+    ]);
+    final history = result[1] as Json;
+    final savedFavorites = result[2] as Json;
+    final loadedEntries = _list(history['diary'], Entry.fromJson);
+    final loadedWeights = {
+      for (final item in (history['weights'] as List)) item['date'] as String: (item['kg'] as num).toDouble(),
+    };
+    final loadedWater = {
+      for (final item in (history['water'] as List)) item['date'] as String: item['ml'] as int,
+    };
+    final loadedSettings = Settings.fromJson(result[0] as Json);
+    final loadedRecipes = _list(result[3], Recipe.fromJson);
+    final loadedRecents = _list(result[4], Food.fromJson);
+    final loadedFavorites = _list(savedFavorites['foods'], Food.fromJson);
+    final loadedFavoriteRecipes = _list(savedFavorites['recipes'], Recipe.fromJson);
+    final loadedProfile = result.length == 6 ? Profile.fromJson(result[5] as Json) : null;
 
-  void login(String email, [String name = '']) {
-    userEmail = email;
-    userName = name.isNotEmpty ? name : (profile?.name.isNotEmpty == true ? profile!.name : email.split('@').first);
+    userEmail = user['email'] as String;
+    userName = user['name'] as String;
     guest = false;
-    _commit();
+    profile = loadedProfile;
+    settings = loadedSettings;
+    entries = loadedEntries;
+    weights = loadedWeights;
+    water = loadedWater;
+    recipes = loadedRecipes;
+    recents = loadedRecents;
+    favoriteFoods = loadedFavorites;
+    favorites = {
+      ...loadedFavorites.map((food) => food.id),
+      ...loadedFavoriteRecipes.map((recipe) => 'recipe:${recipe.id}'),
+    };
   }
+
+  Future<void> refresh() async {
+    if (authed) {
+      await _change(() async {
+        await _loadAccount();
+        catalogRevision++;
+      });
+    }
+  }
+
+  Future<bool> login(String email, String password, {String? name, bool acceptedTerms = false}) =>
+      _change(() async {
+        final registering = name != null;
+        final response = await _api.request(
+          'POST',
+          registering ? 'auth/register' : 'auth/login',
+          auth: false,
+          body: {
+            'email': email,
+            'password': password,
+            if (registering) ...{'name': name, 'acceptedTerms': acceptedTerms},
+          },
+        );
+        await _api.saveSession(response as Json);
+        try {
+          await _loadAccount();
+        } catch (e, stack) {
+          if (_api.hasSession) startupError = _message(e, stack);
+          rethrow;
+        }
+      });
+
+  Future<bool> forgotPassword(String email) => _change(() async {
+        await _api.request('POST', 'auth/forgot', auth: false, body: {'email': email});
+      });
+
+  Future<bool> resetPassword(String email, String code, String password) => _change(() async {
+        await _api.request('POST', 'auth/reset', auth: false, body: {
+          'email': email,
+          'code': code,
+          'newPassword': password,
+        });
+      });
 
   void loginGuest() {
     guest = true;
-    _commit();
+    notifyListeners();
   }
 
-  void logout() {
-    userEmail = null;
-    guest = false;
-    _commit();
-  }
-
-  // --- профиль и настройки ---
-
-  void saveProfile(Profile p) {
-    profile = p;
-    weights[todayIso()] = p.weight;
-    _commit();
-  }
-
-  void updateSettings(void Function(Settings s) change) {
-    change(settings);
-    _commit();
-  }
-
-  // --- дневник ---
-
-  void addEntry(String date, MealType meal, Food food, double grams) {
-    entries.add(Entry(id: uid(), date: date, meal: meal, food: food, grams: grams));
-    recents = [food.id, ...recents.where((id) => id != food.id)].take(30).toList();
-    _commit();
-  }
-
-  void updateEntry(String id, double grams) {
-    entries = [for (final e in entries) e.id == id ? e.copyWith(grams: grams) : e];
-    _commit();
-  }
-
-  void removeEntry(String id) {
-    entries.removeWhere((e) => e.id == id);
-    _commit();
-  }
-
-  void copyMeal(String from, MealType meal, String to) {
-    final copies = entries
-        .where((e) => e.date == from && e.meal == meal)
-        .map((e) => e.copyWith(id: uid(), date: to))
-        .toList();
-    entries.addAll(copies);
-    _commit();
-  }
-
-  // --- продукты и блюда ---
-
-  void saveFood(Food food) {
-    final i = foods.indexWhere((f) => f.id == food.id);
-    if (i >= 0) {
-      foods[i] = food;
-    } else {
-      foods.insert(0, food);
-    }
-    _commit();
-  }
-
-  void removeFood(String id) {
-    foods.removeWhere((f) => f.id == id);
-    favorites.remove(id);
-    recents.remove(id);
-    _commit();
-  }
-
-  void toggleFavorite(String id) {
-    if (!favorites.remove(id)) favorites.insert(0, id);
-    _commit();
-  }
-
-  Food? byBarcode(String code) {
-    for (final f in foods) {
-      if (f.barcode == code) return f;
-    }
-    return null;
-  }
-
-  void saveRecipe(Recipe r) {
-    final i = recipes.indexWhere((x) => x.id == r.id);
-    if (i >= 0) {
-      recipes[i] = r;
-    } else {
-      recipes.insert(0, r);
-    }
-    _commit();
-  }
-
-  void removeRecipe(String id) {
-    recipes.removeWhere((r) => r.id == id);
-    _commit();
-  }
-
-  // --- вода и вес ---
-
-  void addWater(String date, int ml) {
-    water[date] = max(0, (water[date] ?? 0) + ml);
-    _commit();
-  }
-
-  void setWeight(String date, double kg) {
-    weights[date] = kg;
-    final latest = (weights.keys.toList()..sort()).last;
-    if (latest == date) profile?.weight = kg;
-    _commit();
-  }
-
-  void removeWeight(String date) {
-    weights.remove(date);
-    _commit();
-  }
-
-  /// Заполняет две недели дневника и веса случайными данными для демонстрации.
-  void seedDemo() {
-    final rnd = Random();
-    final base = profile?.weight ?? 75;
-    for (var i = 13; i >= 0; i--) {
-      final date = addDays(todayIso(), -i);
-      for (final meal in MealType.values) {
-        for (var k = 0; k < (meal == MealType.snack ? 1 : 3); k++) {
-          final food = foods[rnd.nextInt(foods.length)];
-          entries.add(Entry(id: uid(), date: date, meal: meal, food: food, grams: food.portion ?? 150));
+  Future<bool> logout() => _change(() async {
+        try {
+          await _api.logout();
+        } finally {
+          if (!_api.hasSession) _clearAccount();
         }
-      }
-      weights[date] = ((base + i * 0.12 + (rnd.nextDouble() - 0.5) * 0.6) * 10).round() / 10;
-      water[date] = 1000 + rnd.nextInt(6) * 250;
-    }
-    profile?.weight = weights[todayIso()]!;
-    _commit();
-  }
+      });
 
-  void resetAll() {
+  Future<bool> deleteAccount(String password) => _change(() async {
+        await _api.request('POST', 'auth/delete-account', body: {'password': password});
+        await _api.clearSession();
+        _clearAccount();
+      });
+
+  void _clearAccount() {
     userEmail = null;
     userName = '';
     guest = false;
     profile = null;
-    foods = List.of(seedFoods);
-    recipes = [];
     entries = [];
-    favorites = [];
+    recipes = [];
+    favorites = {};
+    favoriteFoods = [];
     recents = [];
     water = {};
     weights = {};
     settings = Settings();
-    _commit();
+    startupError = null;
+    catalogRevision++;
   }
+
+  Future<bool> saveProfile(Profile value) => _change(() async {
+        final today = todayIso();
+        final result = await _api.request('PUT', 'profile', body: {...value.toJson(), 'today': today});
+        profile = Profile.fromJson(result as Json);
+        userName = profile!.name;
+        weights[today] = value.weight;
+      });
+
+  Future<bool> updateSettings(void Function(Settings) change) => _change(() async {
+        final next = Settings.fromJson(settings.toJson());
+        change(next);
+        final result = await _api.request('PUT', 'settings', body: next.toJson());
+        settings = Settings.fromJson(result as Json);
+      });
+
+  Future<bool> addEntry(String id, String date, MealType meal, Food food, double grams) => _change(() async {
+        final result = await _api.request('POST', 'diary', body: {
+          'id': id,
+          'date': date,
+          'meal': meal.name,
+          'food': food.toJson(),
+          'grams': grams,
+        });
+        final saved = Entry.fromJson(result as Json);
+        if (!entries.any((entry) => entry.id == id)) entries.add(saved);
+        _rebuildRecents();
+      });
+
+  Future<bool> updateEntry(String id, double grams) => _change(() async {
+        final result = await _api.request('PUT', 'diary/$id', body: {'grams': grams});
+        final saved = Entry.fromJson(result as Json);
+        entries = [for (final entry in entries) entry.id == id ? saved : entry];
+        _rebuildRecents();
+      });
+
+  Future<bool> removeEntry(String id) => _change(() async {
+        await _api.request('DELETE', 'diary/$id');
+        entries.removeWhere((entry) => entry.id == id);
+        _rebuildRecents();
+      });
+
+  void _rebuildRecents() {
+    final seen = <String>{};
+    final latest = List.of(entries)..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    recents = [
+      for (final entry in latest.take(300))
+        if (seen.add(entry.food.id.isEmpty ? entry.food.name : entry.food.id)) entry.food,
+    ].take(30).toList();
+  }
+
+  Future<bool> copyMeal(String from, MealType meal, String to) => _change(() async {
+        final result = await _api.request('POST', 'diary/copy', body: {
+          'from': from,
+          'meal': meal.name,
+          'to': to,
+        });
+        final copied = _list(result, Entry.fromJson);
+        entries.addAll(copied);
+        _rebuildRecents();
+      });
+
+  Future<({List<Food> items, bool more})> searchFoods(String query, int page) async {
+    final result = await _api.request('GET', 'foods', query: {
+      'q': query,
+      'page': '$page',
+      'pageSize': '30',
+    }) as Json;
+    return (
+      items: _list(result['items'], Food.fromJson),
+      more: page < 1000 && page * 30 < (result['total'] as int)
+    );
+  }
+
+  Future<Food?> byBarcode(String code) => _run<Food?>(() async {
+        try {
+          final result = await _api.request('GET', 'foods/barcode/$code');
+          return Food.fromJson(result as Json);
+        } on ApiException catch (e) {
+          if (e.status == 404) return null;
+          rethrow;
+        }
+      });
+
+  Future<Food?> saveFood(Food food) => _run(() async {
+        final result = await _api.request('POST', 'foods', body: food.toJson());
+        catalogRevision++;
+        return Food.fromJson(result as Json);
+      });
+
+  Future<bool> removeFood(String id) => _change(() async {
+        await _api.request('DELETE', 'foods/$id');
+        favoriteFoods.removeWhere((food) => food.id == id);
+        favorites.remove(id);
+        catalogRevision++;
+      });
+
+  Future<bool> toggleFavorite(Food food) => _change(() async {
+        final id = food.id;
+        final path = food.isRecipe ? 'recipes/${id.substring(7)}' : 'foods/$id';
+        final removing = favorites.contains(id);
+        await _api.request(removing ? 'DELETE' : 'PUT', 'favorites/$path');
+        if (removing) {
+          favorites.remove(id);
+          favoriteFoods.removeWhere((item) => item.id == id);
+        } else {
+          favorites.add(id);
+          if (!food.isRecipe) favoriteFoods.insert(0, food);
+        }
+      });
+
+  Future<bool> saveRecipe(Recipe recipe) => _change(() async {
+        final creating = recipe.id.isEmpty;
+        final result = await _api.request(
+          creating ? 'POST' : 'PUT',
+          creating ? 'recipes' : 'recipes/${recipe.id}',
+          body: {'name': recipe.name, 'items': recipe.items.map((item) => item.toJson()).toList()},
+        );
+        final saved = Recipe.fromJson(result as Json);
+        recipes = [saved, ...recipes.where((item) => item.id != saved.id)];
+      });
+
+  Future<bool> removeRecipe(String id) => _change(() async {
+        await _api.request('DELETE', 'recipes/$id');
+        recipes.removeWhere((recipe) => recipe.id == id);
+        favorites.remove('recipe:$id');
+      });
+
+  Future<bool> addWater(String date, int delta) => _change(() async {
+        final amount = ((water[date] ?? 0) + delta).clamp(0, 30000);
+        final result = await _api.request('PUT', 'water/$date', body: {'ml': amount}) as Json;
+        water[date] = result['ml'] as int;
+      });
+
+  Future<bool> setWeight(String date, double kg) => _change(() async {
+        await _api.request('PUT', 'weight/$date', body: {'kg': kg});
+        weights[date] = kg;
+        _updateCurrentWeight();
+      });
+
+  Future<bool> removeWeight(String date) => _change(() async {
+        await _api.request('DELETE', 'weight/$date');
+        weights.remove(date);
+        _updateCurrentWeight();
+      });
+
+  void _updateCurrentWeight() {
+    final latest = (weights.keys.toList()..sort()).lastOrNull;
+    if (latest != null) profile?.weight = weights[latest]!;
+  }
+
+  Future<String?> exportCsv(String from, String to) =>
+      _run(() async => await _api.request('GET', 'export', query: {'from': from, 'to': to}, text: true) as String);
 }
 
 class AppScope extends InheritedNotifier<AppState> {
   const AppScope({super.key, required AppState state, required super.child}) : super(notifier: state);
 
-  static AppState of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
+  static AppState of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!.notifier!;
 }
