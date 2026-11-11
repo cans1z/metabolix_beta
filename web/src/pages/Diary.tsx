@@ -198,18 +198,16 @@ export function Diary() {
           <div className="actions">
             <button
               className="btn danger"
-              onClick={() => {
-                removeEntry(editing.id);
-                setEditing(null);
+              onClick={async () => {
+                if (await removeEntry(editing.id)) setEditing(null);
               }}
             >
               Удалить
             </button>
             <button
               className="btn primary"
-              onClick={() => {
-                updateEntry(editing.id, editing.grams);
-                setEditing(null);
+              onClick={async () => {
+                if (await updateEntry(editing.id, editing.grams)) setEditing(null);
               }}
             >
               Сохранить
@@ -231,10 +229,11 @@ export function Diary() {
             <button
               className="btn primary"
               disabled={copyTo === date}
-              onClick={() => {
-                copyMeal(date, copying, copyTo);
-                setCopying(null);
-                setDate(copyTo);
+              onClick={async () => {
+                if (await copyMeal(date, copying, copyTo)) {
+                  setCopying(null);
+                  setDate(copyTo);
+                }
               }}
             >
               Скопировать

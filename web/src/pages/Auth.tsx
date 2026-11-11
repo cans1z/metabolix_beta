@@ -4,19 +4,27 @@ import { Logo } from '../components/icons';
 import { Field } from '../components/ui';
 import { useStore } from '../store';
 
-type Mode = 'login' | 'register' | 'forgot';
+type Mode = 'login' | 'register' | 'forgot' | 'reset';
 
-// Сервера пока нет: вход имитируется локально, пароль никуда не сохраняется.
 export function Auth() {
-  const { login, loginGuest } = useStore();
+  const { login, loginGuest, forgotPassword, resetPassword } = useStore();
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
-  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState('');
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  const title = mode === 'login' ? 'Вход' : mode === 'register' ? 'Регистрация' : 'Восстановление доступа';
-  const valid = /\S+@\S+\.\S+/.test(email) && (mode === 'forgot' || password.length >= 6);
+  const title = mode === 'login' ? 'Вход' : mode === 'register' ? 'Регистрация'
+    : mode === 'reset' ? 'Новый пароль' : 'Восстановление доступа';
+  const valid = /^\S+@\S+\.\S+$/.test(email.trim()) && (mode === 'forgot' || password.length >= 6) &&
+    (mode !== 'register' || acceptedTerms) && (mode !== 'reset' || /^\d{6}$/.test(code));
+  const switchMode = (next: Mode) => {
+    setPassword('');
+    setCode('');
+    setAcceptedTerms(false);
+    setMode(next);
+  };
 
   return (
     <div className="center-screen">
@@ -26,11 +34,18 @@ export function Auth() {
         <h2>{title}</h2>
         <form
           className="form"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             if (!valid) return;
-            if (mode === 'forgot') setSent(true);
-            else login(email.trim(), name.trim());
+            const secret = password;
+            setPassword('');
+            if (mode === 'forgot') {
+              if (await forgotPassword(email.trim())) switchMode('reset');
+            } else if (mode === 'reset') {
+              if (await resetPassword(email.trim(), code, secret)) switchMode('login');
+            } else {
+              await login(email.trim(), secret, mode === 'register' ? name.trim() : undefined, acceptedTerms);
+            }
           }}
         >
           {mode === 'register' && (
@@ -47,6 +62,13 @@ export function Auth() {
               onChange={(e) => setEmail(e.target.value)}
             />
           </Field>
+          {mode === 'reset' && (
+            <Field label="Код из письма">
+              <input className="input" inputMode="numeric" value={code}
+                onChange={(e) => setCode(e.target.value.trim())} maxLength={6} />
+              <span className="muted small">Если адрес зарегистрирован, на него отправлен код.</span>
+            </Field>
+          )}
           {mode !== 'forgot' && (
             <Field label="Пароль (не короче 6 символов)">
               <input
@@ -58,28 +80,29 @@ export function Auth() {
               />
             </Field>
           )}
-          {sent && mode === 'forgot' && <div className="notice">Если адрес зарегистрирован, письмо уже в пути.</div>}
+          {mode === 'register' && (
+            <label>
+              <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />{' '}
+              Согласен на обработку персональных данных
+            </label>
+          )}
           <button className="btn primary block" disabled={!valid}>
-            {mode === 'login' ? 'Войти' : mode === 'register' ? 'Создать аккаунт' : 'Отправить ссылку'}
+            {mode === 'login' ? 'Войти' : mode === 'register' ? 'Создать аккаунт'
+              : mode === 'reset' ? 'Сменить пароль' : 'Отправить код'}
           </button>
         </form>
-        {mode !== 'forgot' && (
-          <button className="btn block" onClick={() => login('demo@gmail.com', 'Demo')}>
-            Войти через Google
-          </button>
-        )}
         <div className="auth-links">
           {mode === 'login' ? (
             <>
-              <button className="link" onClick={() => setMode('register')}>
+              <button className="link" onClick={() => switchMode('register')}>
                 Регистрация
               </button>
-              <button className="link" onClick={() => setMode('forgot')}>
+              <button className="link" onClick={() => switchMode('forgot')}>
                 Забыли пароль?
               </button>
             </>
           ) : (
-            <button className="link" onClick={() => setMode('login')}>
+            <button className="link" onClick={() => switchMode('login')}>
               Уже есть аккаунт — войти
             </button>
           )}

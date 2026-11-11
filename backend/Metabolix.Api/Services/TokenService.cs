@@ -26,10 +26,7 @@ public class JwtOptions
     }
 }
 
-/// <summary>
-/// Access-токен (JWT) живёт 15 минут и проверяется без обращения к хранилищу.
-/// Refresh-токен живёт 30 дней и лежит в Redis, поэтому его можно отозвать: это и есть выход из аккаунта.
-/// </summary>
+/// <summary>access токен действует 15 минут а refresh токен храним в редисе 30 дней</summary>
 public class TokenService(JwtOptions options, RedisStore store)
 {
     private IDatabase Db => store.Db;
@@ -55,17 +52,14 @@ public class TokenService(JwtOptions options, RedisStore store)
         var hash = Hash(token);
         var ttl = TimeSpan.FromDays(options.RefreshTokenDays);
 
-        // В Redis лежит только хэш: утечка дампа не даст войти в чужой аккаунт.
+        // в редисе храним хэш refresh токена
         await Db.StringSetAsync($"refresh:{hash}", userId.ToString(), ttl);
         await Db.SetAddAsync($"user-tokens:{userId}", hash);
         await Db.KeyExpireAsync($"user-tokens:{userId}", ttl);
         return token;
     }
 
-    /// <summary>
-    /// Одноразово забирает refresh-токен. GETDEL атомарен, поэтому один токен нельзя обменять дважды,
-    /// даже если два запроса пришли одновременно.
-    /// </summary>
+    /// <summary>атомарно забираем refresh токен чтобы его нельзя было использовать дважды</summary>
     public async Task<Guid?> ConsumeRefreshTokenAsync(string token)
     {
         var hash = Hash(token);
@@ -77,7 +71,7 @@ public class TokenService(JwtOptions options, RedisStore store)
         return userId;
     }
 
-    /// <summary>Выход на всех устройствах: после смены пароля и удаления аккаунта.</summary>
+    /// <summary>выход на всех устройствах после смены пароля и удаления аккаунта</summary>
     public async Task RevokeAllAsync(Guid userId)
     {
         var hashes = await Db.SetMembersAsync($"user-tokens:{userId}");

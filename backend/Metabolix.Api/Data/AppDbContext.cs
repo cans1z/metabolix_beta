@@ -18,7 +18,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     protected override void OnModelCreating(ModelBuilder b)
     {
-        // Расширение Postgres для поиска с опечатками.
+        // поиск с опечатками через триграммы
         b.HasPostgresExtension("pg_trgm");
 
         b.Entity<User>(e =>
@@ -58,7 +58,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasMethod("GIN");
             e.HasIndex(x => x.SearchName).HasMethod("GIN").HasOperators("gin_trgm_ops");
 
-            // Один штрихкод — одна общая карточка; личные у разных пользователей могут совпадать.
+            // общий штрихкод уникален а личные карточки могут его повторять
             e.HasIndex(x => x.Barcode).IsUnique().HasFilter("\"OwnerId\" IS NULL AND \"Barcode\" IS NOT NULL")
                 .HasDatabaseName("IX_Foods_GlobalBarcode");
             e.HasIndex(x => new { x.OwnerId, x.Barcode }).IsUnique().HasFilter("\"OwnerId\" IS NOT NULL AND \"Barcode\" IS NOT NULL")
@@ -89,7 +89,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         b.Entity<RecipeItem>(e =>
         {
-            // Id задаём сами: иначе EF примет новый ингредиент за существующий и попробует его обновить.
+            // задаём id сами чтобы ef добавлял новый ингредиент
             e.Property(x => x.Id).ValueGeneratedNever();
             MapSnapshot(e.OwnsOne(x => x.Food));
         });

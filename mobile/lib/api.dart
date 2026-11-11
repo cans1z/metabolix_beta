@@ -74,7 +74,7 @@ class ApiClient {
       try {
         await pending;
       } on ApiException {
-        // Даже без сети завершаем локальную сессию.
+        // даже без сети завершаем локальную сессию
       }
     }
     final token = _refresh;
@@ -162,7 +162,7 @@ class ApiClient {
           final decoded = jsonDecode(raw);
           if (decoded is Json) problem = decoded;
         } on FormatException {
-          // Nginx может вернуть HTML, а сервер — пустой ответ.
+          // nginx может вернуть html, а сервер пустой ответ
         }
         final errors = problem?['errors'];
         final validation = errors is Map ? errors.values.expand((v) => v as List).join('\n') : null;
@@ -175,8 +175,20 @@ class ApiClient {
       }
       return text ? raw : (raw.isEmpty ? null : jsonDecode(raw));
     } on TimeoutException {
+      if (kDebugMode) {
+        throw ApiException('Нет ответа от $method ${url.origin}${url.path} за ${_timeout.inSeconds} с');
+      }
       throw const ApiException('Сервер не ответил вовремя. Проверьте соединение');
-    } on IOException {
+    } on IOException catch (error) {
+      if (kDebugMode) {
+        final detail = switch (error) {
+          SocketException e => e.osError?.toString() ?? e.message,
+          HttpException e => e.message,
+          TlsException e => e.osError?.toString() ?? e.message,
+          _ => error.runtimeType.toString(),
+        };
+        throw ApiException('$method ${url.origin}${url.path}\n${error.runtimeType}: $detail');
+      }
       throw const ApiException('Сервер недоступен. Проверьте соединение и адрес API');
     } on FormatException {
       throw const ApiException('Сервер вернул некорректный ответ');

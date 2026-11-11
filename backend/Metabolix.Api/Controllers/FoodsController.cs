@@ -22,10 +22,10 @@ public class FoodsController(
     private static readonly TimeSpan FoundTtl = TimeSpan.FromDays(1);
     private static readonly TimeSpan NotFoundTtl = TimeSpan.FromHours(1);
 
-    /// <summary>Что лежит в кэше по штрихкоду. Food = null значит «точно нет», чтобы не спрашивать внешнюю базу снова.</summary>
+    /// <summary>null в кэше означает что штрихкод уже искали и не нашли</summary>
     private record CachedBarcode(FoodDto? Food);
 
-    /// <summary>Гостю справочник тоже доступен (п. 5.1.1 ТЗ).</summary>
+    /// <summary>справочник доступен без входа</summary>
     [AllowAnonymous]
     [HttpGet]
     public Task<PageDto<FoodDto>> Search(string? q, [Range(1, 1000)] int page = 1, [Range(1, 100)] int pageSize = 20) =>
@@ -40,7 +40,7 @@ public class FoodsController(
         return food == null ? Error(404, "Продукт не найден") : food.ToDto();
     }
 
-    /// <summary>Порядок: личная карточка → Redis → общий справочник → Open Food Facts.</summary>
+    /// <summary>сначала ищем личную карточку затем кэш общий справочник и внешнюю базу</summary>
     [AllowAnonymous]
     [HttpGet(BarcodeRoute)]
     public async Task<ActionResult<FoodDto>> ByBarcode(string code, CancellationToken ct)
@@ -60,7 +60,7 @@ public class FoodsController(
         var food = await db.Foods.AsNoTracking().FirstOrDefaultAsync(f => f.OwnerId == null && f.Barcode == code, ct);
         if (food == null)
         {
-            // Метод публичный и ходит во внешний сервис, поэтому ограничиваем частоту.
+            // ограничиваем частоту запросов к внешней базе
             if (!await store.TryHitAsync($"barcode-ip:{ClientIp}", 30, TimeSpan.FromMinutes(1)))
                 return Error(429, "Слишком много запросов, подождите минуту");
 
@@ -77,7 +77,7 @@ public class FoodsController(
                 }
                 catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
                 {
-                    // Такой же штрихкод одновременно сохранил другой запрос — берём его запись.
+                    // при одновременном добавлении берём уже сохранённую карточку
                     db.Entry(food).State = EntityState.Detached;
                     food = await db.Foods.AsNoTracking().FirstAsync(f => f.OwnerId == null && f.Barcode == code, ct);
                 }
@@ -88,7 +88,7 @@ public class FoodsController(
         return food == null ? Error(404, notFound) : food.ToDto();
     }
 
-    /// <summary>Недавние — последние разные продукты из дневника, отдельно не хранятся.</summary>
+    /// <summary>список недавних собираем из дневника</summary>
     [HttpGet("recent")]
     public async Task<List<FoodDto>> Recent()
     {

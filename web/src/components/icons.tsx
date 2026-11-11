@@ -89,7 +89,7 @@ export function Icon(props: { name: IconName; size?: number; filled?: boolean })
   );
 }
 
-/** Знак — тарелка с отрезанной порцией. */
+/* знак тарелка с отрезанной порцией */
 export function Logo() {
   return (
     <span className="logo">

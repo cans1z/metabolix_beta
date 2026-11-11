@@ -2,17 +2,17 @@ using NpgsqlTypes;
 
 namespace Metabolix.Api.Models;
 
-/// <summary>Карточка продукта. Пищевая ценность — на 100 г / 100 мл.</summary>
+/// <summary>пищевая ценность на 100 г или 100 мл</summary>
 public class Food
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    /// <summary>null — общий продукт из справочника, иначе личная карточка пользователя.</summary>
+    /// <summary>без владельца продукт доступен всем</summary>
     public Guid? OwnerId { get; set; }
 
     public required string Name { get; set; }
 
-    /// <summary>Название для поиска: нижний регистр и «е» вместо «ё».</summary>
+    /// <summary>название для поиска приводим к нижнему регистру и заменяем ё на е</summary>
     public string SearchName { get; set; } = "";
 
     public double Kcal { get; set; }
@@ -25,17 +25,14 @@ public class Food
     public string? ImageUrl { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    /// <summary>Генерируется самой БД из SearchName со словарём russian.</summary>
+    /// <summary>база строит поисковый вектор с русским словарём</summary>
     public NpgsqlTsVector SearchVector { get; set; } = null!;
 }
 
-/// <summary>
-/// Копия продукта внутри записи дневника или рецепта. Правка или удаление карточки
-/// не должны менять уже записанную историю.
-/// </summary>
+/// <summary>снимок продукта сохраняет историю при изменении справочника</summary>
 public class FoodSnapshot
 {
-    /// <summary>Id исходного продукта; у блюд вида "recipe:{guid}". Нужен для списка «недавние».</summary>
+    /// <summary>ссылка на исходный продукт или рецепт для списка недавних</summary>
     public string? FoodRef { get; set; }
     public string Name { get; set; } = "";
     public double Kcal { get; set; }

@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Metabolix.Api.Services;
 
-/// <summary>Вес хранится по датам, а текущий вес в анкете — это всегда самая поздняя запись.</summary>
+/// <summary>вес хранится по датам, а текущий вес в анкете это всегда самая поздняя запись</summary>
 public class WeightService(AppDbContext db)
 {
     public async Task SetAsync(Guid userId, DateOnly date, double kg)

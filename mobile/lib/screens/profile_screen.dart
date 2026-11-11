@@ -34,7 +34,7 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// Копирует в буфер CSV, сформированный сервером.
+  /// копирует в буфер csv, сформированный сервером
   Future<void> _exportCsv(BuildContext context, AppState app) async {
     final from = addDays(todayIso(), -29);
     final csv = await app.exportCsv(from, todayIso());

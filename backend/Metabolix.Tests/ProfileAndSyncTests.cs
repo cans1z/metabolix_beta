@@ -142,7 +142,7 @@ public class SyncTests(ApiFixture api)
 
         Assert.Equal(1, (await PushAsync(user, new { diary = new[] { Entry(id, 100, t) } })).Applied);
 
-        // Телефон долго был офлайн и прислал более старую правку.
+        // телефон долго был офлайн и прислал более старую правку
         var stale = await PushAsync(user, new { diary = new[] { Entry(id, 999, t.AddMinutes(-30)) } });
         Assert.Equal(1, stale.Skipped);
         Assert.Equal(100, (await user.GetAsync<DayDto>($"/api/diary/{Day:yyyy-MM-dd}")).Entries.Single().Grams);
@@ -150,7 +150,7 @@ public class SyncTests(ApiFixture api)
         Assert.Equal(1, (await PushAsync(user, new { diary = new[] { Entry(id, 200, t.AddMinutes(30)) } })).Applied);
         Assert.Equal(200, (await user.GetAsync<DayDto>($"/api/diary/{Day:yyyy-MM-dd}")).Entries.Single().Grams);
 
-        // Повтор той же отправки (например, после обрыва сети) ничего не меняет.
+        // повтор той же отправки (например, после обрыва сети) ничего не меняет
         Assert.Equal(1, (await PushAsync(user, new { diary = new[] { Entry(id, 200, t.AddMinutes(30)) } })).Skipped);
     }
 
@@ -193,7 +193,7 @@ public class SyncTests(ApiFixture api)
 
         await Task.Delay(TimeSpan.FromSeconds(6)); // курсор сдвинут на 5 секунд назад, иначе эти записи придут повторно
         var first = await user.GetAsync<SyncPullResult>("/api/sync/pull");
-        Assert.Equal(kept.Id, first.Diary.Single().Id); // первая загрузка — без удалённых
+        Assert.Equal(kept.Id, first.Diary.Single().Id); // первая загрузка без удалённых
         var cursor = first.Cursor.ToString("O");
 
         var unchanged = await user.GetAsync<SyncPullResult>("/api/sync/pull?since=" + Uri.EscapeDataString(cursor));
@@ -214,7 +214,7 @@ public class SyncTests(ApiFixture api)
         var cursor = (await user.GetAsync<SyncPullResult>("/api/sync/pull")).Cursor.ToString("O");
         await Task.Delay(TimeSpan.FromSeconds(6));
 
-        // Запись сделана офлайн вчера, а до сервера дошла только сейчас.
+        // запись сделана офлайн вчера, а до сервера дошла только сейчас
         var id = Guid.NewGuid();
         await PushAsync(user, new { diary = new[] { Entry(id, 100, DateTime.UtcNow.AddDays(-1)) } });
 

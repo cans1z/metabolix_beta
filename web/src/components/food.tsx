@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MEALS, macrosFor, recipeToFood } from '../lib/nutrition';
 import { r0, r1, today, uid } from '../lib/util';
-import { useStore } from '../store';
+import { useStore, type FoodPage } from '../store';
 import type { Food, MealType } from '../types';
 import { Icon } from './icons';
 import { Field, Modal, Segmented, Stepper } from './ui';
@@ -17,11 +17,32 @@ const TABS: { value: Tab; label: string }[] = [
 
 export const perLabel = (f: Food) => `на 100 ${f.unit === 'ml' ? 'мл' : 'г'}`;
 
-/** Поиск по базе с вкладками «недавние / избранное / блюда». */
+/* поиск продуктов и выбор из сохранённых */
 export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (id: string) => void }) {
-  const { state, toggleFavorite } = useStore();
+  const { state, toggleFavorite, searchFoods, catalogRevision } = useStore();
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<FoodPage | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+
+  useEffect(() => {
+    if (tab !== 'all') return;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    const timer = setTimeout(() => {
+      searchFoods(query, page, controller.signal)
+        .then((data) => { if (!controller.signal.aborted) setResult(data); })
+        .catch((reason: unknown) => {
+          if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Не удалось загрузить продукты');
+        })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [query, page, tab, searchFoods, catalogRevision, retry]);
 
   const list = useMemo(() => {
     const byId = new Map(state.foods.map((f) => [f.id, f]));
@@ -30,13 +51,13 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
     const ids = (xs: string[]) => xs.map((id) => byId.get(id)).filter((f): f is Food => !!f);
     const source =
       tab === 'all'
-        ? state.foods
+        ? result?.items ?? []
         : tab === 'recipes'
           ? recipes
           : ids(tab === 'favorites' ? state.favorites : state.recents);
     const q = query.trim().toLowerCase();
-    return q ? source.filter((f) => f.name.toLowerCase().includes(q)) : source;
-  }, [state.foods, state.recipes, state.favorites, state.recents, tab, query]);
+    return q && tab !== 'all' ? source.filter((f) => f.name.toLowerCase().includes(q)) : source;
+  }, [state.foods, state.recipes, state.favorites, state.recents, tab, query, result]);
 
   return (
     <div className="picker">
@@ -44,11 +65,15 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
         className="input"
         placeholder="Поиск продукта…"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => { setQuery(e.target.value); setPage(1); }}
         autoFocus
       />
-      <Segmented value={tab} options={TABS} onChange={setTab} />
+      <Segmented value={tab} options={state.user ? TABS : TABS.slice(0, 1)} onChange={setTab} />
       <div className="list">
+        {tab === 'all' && loading ? <div className="empty" role="status">Загрузка…</div> :
+          tab === 'all' && error ? <div className="empty" role="alert">
+            {error} <button className="link" onClick={() => setRetry((value) => value + 1)}>Повторить</button>
+          </div> : <>
         {list.length === 0 && <div className="empty">Ничего не найдено</div>}
         {list.map((f) => {
           const isRecipe = f.id.startsWith('recipe:');
@@ -60,7 +85,7 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
                   {r0(f.kcal)} ккал · Б {r1(f.protein)} · Ж {r1(f.fat)} · У {r1(f.carbs)} · {perLabel(f)}
                 </div>
               </div>
-              {isRecipe && props.onEditRecipe && (
+              {isRecipe && props.onEditRecipe && state.recipes.some((recipe) => 'recipe:' + recipe.id === f.id) && (
                 <button
                   className="icon-btn"
                   title="Изменить блюдо"
@@ -72,25 +97,33 @@ export function FoodPicker(props: { onPick: (f: Food) => void; onEditRecipe?: (i
                   <Icon name="edit" size={18} />
                 </button>
               )}
-              <button
+              {state.user && f.id && <button
                 className={'icon-btn star' + (state.favorites.includes(f.id) ? ' on' : '')}
                 title="Избранное"
                 onClick={(e) => {
                   e.stopPropagation();
-                  toggleFavorite(f.id);
+                  void toggleFavorite(f);
                 }}
               >
                 <Icon name="star" size={18} filled={state.favorites.includes(f.id)} />
-              </button>
+              </button>}
             </div>
           );
-        })}
+        })}</>}
       </div>
+      {tab === 'all' && result && (page > 1 || page * result.pageSize < result.total) && (
+        <div className="actions">
+          <button className="btn small" disabled={loading || page <= 1} onClick={() => setPage(page - 1)}>Назад</button>
+          <span>{page}</span>
+          <button className="btn small" disabled={loading || page >= 1000 || page * result.pageSize >= result.total}
+            onClick={() => setPage(page + 1)}>Далее</button>
+        </div>
+      )}
     </div>
   );
 }
 
-/** Ввод количества: граммы или стандартные порции, с пересчётом КБЖУ. */
+/* пересчёт кбжу по весу или числу порций */
 export function AmountPicker(props: { food: Food; grams: number; onChange: (g: number) => void }) {
   const { food, grams, onChange } = props;
   const [mode, setMode] = useState<'grams' | 'portions'>('grams');
@@ -142,12 +175,12 @@ export function AmountPicker(props: { food: Food; grams: number; onChange: (g: n
   );
 }
 
-/** Карточка продукта с добавлением в дневник. */
 export function FoodCardModal(props: { food: Food; date?: string; meal?: MealType; onClose: () => void }) {
   const { state, addEntry, removeFood } = useStore();
   const { food } = props;
   const [grams, setGrams] = useState(food.portion ?? 100);
   const [meal, setMeal] = useState<MealType>(props.meal ?? 'breakfast');
+  const [entryId] = useState(uid);
   const canLog = !!state.user && !!state.profile;
   return (
     <Modal title={food.name} onClose={props.onClose}>
@@ -162,12 +195,11 @@ export function FoodCardModal(props: { food: Food; date?: string; meal?: MealTyp
             <Segmented value={meal} options={MEALS.map((m) => ({ value: m.id, label: m.label }))} onChange={setMeal} />
           </Field>
           <div className="actions">
-            {food.custom && (
+            {food.custom && !food.id.startsWith('recipe:') && (
               <button
                 className="btn danger"
-                onClick={() => {
-                  removeFood(food.id);
-                  props.onClose();
+                onClick={async () => {
+                  if (await removeFood(food.id)) props.onClose();
                 }}
               >
                 Удалить продукт
@@ -175,9 +207,9 @@ export function FoodCardModal(props: { food: Food; date?: string; meal?: MealTyp
             )}
             <button
               className="btn primary"
-              onClick={() => {
-                addEntry(props.date ?? today(), meal, food, grams);
-                props.onClose();
+              disabled={grams < 0.1 || grams > 20000}
+              onClick={async () => {
+                if (await addEntry(entryId, props.date ?? today(), meal, food, grams)) props.onClose();
               }}
             >
               Добавить в дневник
@@ -193,7 +225,7 @@ export function FoodCardModal(props: { food: Food; date?: string; meal?: MealTyp
 
 const num = (s: string) => Number(s.replace(',', '.')) || 0;
 
-/** Создание карточки продукта вручную (в т.ч. когда штрихкод не найден). */
+/* создание своего продукта */
 export function FoodFormModal(props: { barcode?: string; onClose: () => void; onSaved?: (f: Food) => void }) {
   const { saveFood } = useStore();
   const [f, setF] = useState({
@@ -212,11 +244,11 @@ export function FoodFormModal(props: { barcode?: string; onClose: () => void; on
     <Modal title="Новый продукт" onClose={props.onClose}>
       <form
         className="form"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           if (!valid) return;
           const food: Food = {
-            id: uid(),
+            id: '',
             name: f.name.trim(),
             kcal: num(f.kcal),
             protein: num(f.protein),
@@ -227,9 +259,11 @@ export function FoodFormModal(props: { barcode?: string; onClose: () => void; on
             barcode: f.barcode.trim() || undefined,
             custom: true,
           };
-          saveFood(food);
-          props.onSaved?.(food);
-          props.onClose();
+          const saved = await saveFood(food);
+          if (saved) {
+            props.onSaved?.(saved);
+            props.onClose();
+          }
         }}
       >
         <Field label="Название">
@@ -277,24 +311,19 @@ export function FoodFormModal(props: { barcode?: string; onClose: () => void; on
   );
 }
 
-/** Поиск по штрихкоду. В вебе код вводится вручную; в мобильном приложении — камерой. */
 export function BarcodeModal(props: { onClose: () => void; onFound: (f: Food) => void; onCreate: (code: string) => void }) {
-  const { state } = useStore();
+  const { state, byBarcode } = useStore();
   const [code, setCode] = useState('');
   const [missing, setMissing] = useState(false);
-  const demo = state.foods.filter((f) => f.barcode).slice(0, 3);
-  const search = (c: string) => {
-    const found = state.foods.find((f) => f.barcode === c.trim());
-    if (found) props.onFound(found);
-    else setMissing(true);
-  };
   return (
     <Modal title="Штрихкод" onClose={props.onClose}>
       <form
         className="form"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
-          search(code);
+          const found = await byBarcode(code.trim());
+          if (found) props.onFound(found);
+          else if (found === null) setMissing(true);
         }}
       >
         <Field label="Код с упаковки">
@@ -310,24 +339,16 @@ export function BarcodeModal(props: { onClose: () => void; onFound: (f: Food) =>
             autoFocus
           />
         </Field>
-        <div className="muted small">
-          Для проверки:{' '}
-          {demo.map((f) => (
-            <button type="button" className="chip" key={f.id} onClick={() => setCode(f.barcode!)}>
-              {f.barcode}
-            </button>
-          ))}
-        </div>
         {missing && (
           <div className="notice">
             Продукт не найден.{' '}
-            <button type="button" className="link" onClick={() => props.onCreate(code.trim())}>
+            {state.user && <button type="button" className="link" onClick={() => props.onCreate(code.trim())}>
               Создать карточку
-            </button>
+            </button>}
           </div>
         )}
         <div className="actions">
-          <button className="btn primary" disabled={!code.trim()}>
+          <button className="btn primary" disabled={!/^\d{8,14}$/.test(code.trim())}>
             Найти
           </button>
         </div>

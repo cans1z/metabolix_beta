@@ -9,7 +9,7 @@ String addDays(String s, int n) {
   return iso(DateTime(d.year, d.month, d.day + n));
 }
 
-/// Все даты от [from] до [to] включительно (не больше года).
+/// даты за период включительно не больше года
 List<String> dateRange(String from, String to) {
   final out = <String>[];
   for (var d = from; d.compareTo(to) <= 0 && out.length < 366; d = addDays(d, 1)) {

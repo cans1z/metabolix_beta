@@ -3,7 +3,7 @@ using Metabolix.Api.Models;
 
 namespace Metabolix.Api.Services;
 
-/// <summary>Формулы из раздела 5.5.1 ТЗ. Те же, что в веб- и мобильном клиенте.</summary>
+/// <summary>общие формулы расчёта кбжу для клиентов и сервера</summary>
 public static class Nutrition
 {
     public static int Age(DateOnly birthDate, DateOnly today)
@@ -13,13 +13,13 @@ public static class Nutrition
         return age;
     }
 
-    /// <summary>Основной обмен по формуле Миффлина — Сан Жеора.</summary>
+    /// <summary>основной обмен по формуле миффлина сан жеора</summary>
     public static double Bmr(Profile p, DateOnly today) =>
         10 * p.Weight + 6.25 * p.Height - 5 * Age(p.BirthDate, today) + (p.Sex == Sex.Male ? 5 : -161);
 
     public static double Tdee(Profile p, DateOnly today) => Bmr(p, today) * p.Activity;
 
-    /// <summary>Поправка к TDEE: −15% при похудении, +10% при наборе.</summary>
+    /// <summary>дефицит 15 процентов для похудения и профицит 10 для набора</summary>
     private static double GoalFactor(Goal goal) => goal switch
     {
         Goal.Lose => 0.85,

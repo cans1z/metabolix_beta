@@ -17,7 +17,7 @@ namespace Metabolix.Tests;
 [CollectionDefinition("api")]
 public class ApiCollection : ICollectionFixture<ApiFixture>;
 
-/// <summary>Настоящие Postgres и Redis в контейнерах; подменяются только внешние сервисы.</summary>
+/// <summary>для тестов поднимаем постгрес и редис в контейнерах</summary>
 public class ApiFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder().WithImage("postgres:17-alpine").Build();
@@ -38,7 +38,7 @@ public class ApiFixture : IAsyncLifetime
     {
         await Task.WhenAll(_postgres.StartAsync(), _redis.StartAsync());
 
-        // Program.cs читает настройки ещё до Build(), поэтому передаём их через окружение.
+        // передаём настройки через окружение до сборки приложения
         Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", _postgres.GetConnectionString());
         Environment.SetEnvironmentVariable("ConnectionStrings__Redis", _redis.GetConnectionString());
         Environment.SetEnvironmentVariable("Jwt__Key", "test-key-test-key-test-key-test-key-0123456789");
@@ -90,7 +90,7 @@ public record TestUser(HttpClient Http, string Email, AuthResponse Auth)
         return (await response.Content.ReadFromJsonAsync<T>(ApiFixture.Json))!;
     }
 
-    /// <summary>Анкета: мужчина 30 лет, 180 см, 80 кг, поддержание, активность 1,2.</summary>
+    /// <summary>анкета мужчина 30 лет, 180 см, 80 кг, поддержание, активность 1,2</summary>
     public async Task SaveProfileAsync(double weight = 80)
     {
         var birth = DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-30).AddDays(-1);
@@ -150,7 +150,7 @@ public class FakeGoogle : IGoogleTokenValidator
 {
     public bool IsConfigured => true;
 
-    /// <summary>Формат токена в тестах: "subject|email|verified".</summary>
+    /// <summary>тестовый токен содержит идентификатор почту и статус подтверждения</summary>
     public Task<GoogleUser?> ValidateAsync(string idToken)
     {
         var parts = idToken.Split('|');

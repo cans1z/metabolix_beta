@@ -9,7 +9,7 @@ const fatColor = Color(0xFFF59E0B);
 const carbsColor = Color(0xFF8B5CF6);
 const waterColor = Color(0xFF0EA5E9);
 
-/// Числовой степпер с необязательным слайдером — ввод в минимум касаний.
+/// ввод количества кнопками или ползунком
 class NumberStepper extends StatelessWidget {
   final double value, min, max, step;
   final String unit;

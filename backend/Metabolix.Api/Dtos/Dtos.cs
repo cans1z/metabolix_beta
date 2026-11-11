@@ -3,10 +3,7 @@ using Metabolix.Api.Models;
 
 namespace Metabolix.Api.Dtos;
 
-// Запросы — классы с required: если поля нет в JSON, сервер сразу вернёт 400,
-// а не молча подставит 0 или первое значение enum. Ответы — короткие record.
-
-// --- Вход ---
+// required поля обязательны в запросе иначе сервер вернёт 400
 
 public class RegisterRequest
 {
@@ -19,7 +16,7 @@ public class RegisterRequest
     [MaxLength(100)]
     public string? Name { get; init; }
 
-    /// <summary>Галочка согласия на обработку персональных данных (152-ФЗ, п. 5.6 ТЗ).</summary>
+    /// <summary>согласие на обработку персональных данных</summary>
     public required bool AcceptedTerms { get; init; }
 }
 
@@ -59,14 +56,12 @@ public class ResetPasswordRequest
 
 public class DeleteAccountRequest
 {
-    /// <summary>Обязателен, если у аккаунта есть пароль.</summary>
+    /// <summary>нужен для аккаунтов с паролем</summary>
     public string? Password { get; init; }
 }
 
 public record UserDto(Guid Id, string Email, string Name, string? AvatarUrl, bool HasProfile);
 public record AuthResponse(string AccessToken, string RefreshToken, int ExpiresIn, UserDto User);
-
-// --- Профиль и настройки ---
 
 public class ProfileDto
 {
@@ -88,7 +83,7 @@ public class ProfileDto
     public required double Activity { get; init; }
     public required Goal Goal { get; init; }
 
-    /// <summary>Сегодняшняя дата на устройстве: на неё запишется вес. Сервер не знает часовой пояс клиента.</summary>
+    /// <summary>дату для записи веса передаёт клиент с учётом своего часового пояса</summary>
     public DateOnly? Today { get; init; }
 }
 
@@ -131,9 +126,7 @@ public class SettingsDto
     public required RemindersDto Reminders { get; init; }
 }
 
-// --- Продукты ---
-
-/// <summary>Один формат и для карточки из базы, и для копии продукта в дневнике или рецепте.</summary>
+/// <summary>общий формат продукта для справочника дневника и рецептов</summary>
 public class FoodDto
 {
     [MaxLength(64)] public string? Id { get; init; }
@@ -155,8 +148,6 @@ public class FoodDto
 public record PageDto<T>(List<T> Items, int Page, int PageSize, int Total);
 public record FavoritesDto(List<FoodDto> Foods, List<RecipeDto> Recipes);
 
-// --- Блюда ---
-
 public class RecipeItemDto
 {
     public required FoodDto Food { get; init; }
@@ -175,11 +166,9 @@ public class RecipeRequest
 public record RecipeDto(Guid Id, string Name, string? ImageUrl, List<RecipeItemDto> Items,
     double Weight, MacrosDto Total, FoodDto AsFood);
 
-// --- Дневник ---
-
 public class CreateEntryRequest
 {
-    /// <summary>Можно сгенерировать на клиенте: повторная отправка не создаст дубль.</summary>
+    /// <summary>клиентский id защищает от дублей при повторной отправке</summary>
     public Guid? Id { get; init; }
     public required DateOnly Date { get; init; }
     public required MealType Meal { get; init; }
@@ -204,8 +193,6 @@ public class CopyMealRequest
 public record EntryDto(Guid Id, DateOnly Date, MealType Meal, FoodDto Food, double Grams, MacrosDto Macros, DateTime UpdatedAt);
 public record DayDto(DateOnly Date, List<EntryDto> Entries, MacrosDto Total, MacrosDto? Targets, double? KcalLeft, int WaterMl, int WaterGoal);
 
-// --- Вес, вода, статистика ---
-
 public class SetWeightRequest
 {
     [Range(20, 400, ErrorMessage = "Вес от 20 до 400 кг")] public required double Kg { get; init; }
@@ -221,8 +208,6 @@ public record WaterDto(DateOnly Date, int Ml);
 public record DayStatsDto(DateOnly Date, double Kcal, double Protein, double Fat, double Carbs);
 public record StatsDto(DateOnly From, DateOnly To, List<DayStatsDto> Days, MacrosDto Average, int LoggedDays, int TotalDays,
     List<WeightDto> Weights, MacrosDto? Targets, BmiDto? Bmi);
-
-// --- Синхронизация ---
 
 public class SyncDiaryItem
 {
@@ -258,10 +243,10 @@ public class SyncPushRequest
     [MaxLength(2000)] public List<SyncWaterItem> Water { get; init; } = [];
 }
 
-/// <param name="Applied">Сколько изменений принято.</param>
-/// <param name="Skipped">Сколько пропущено: на сервере уже есть версия новее.</param>
-/// <param name="Rejected">Id записей, принадлежащих другому пользователю.</param>
+/// <param name="Applied">число принятых изменений</param>
+/// <param name="Skipped">число пропусков из-за более новой версии на сервере</param>
+/// <param name="Rejected">id чужих записей</param>
 public record SyncPushResult(int Applied, int Skipped, List<Guid> Rejected);
 
-/// <param name="Cursor">Передайте его в следующий pull как since.</param>
+/// <param name="Cursor">курсор для следующего запроса изменений</param>
 public record SyncPullResult(List<SyncDiaryItem> Diary, List<SyncWeightItem> Weights, List<SyncWaterItem> Water, DateTime Cursor);

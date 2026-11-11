@@ -3,7 +3,7 @@ export type Sex = 'male' | 'female';
 export type Goal = 'lose' | 'maintain' | 'gain';
 export type Theme = 'system' | 'light' | 'dark';
 
-/** Карточка продукта. Пищевая ценность — на 100 г / 100 мл. */
+/* пищевая ценность на 100 г или 100 мл */
 export interface Food {
   id: string;
   name: string;
@@ -28,19 +28,20 @@ export interface Recipe {
   items: RecipeItem[];
 }
 
-/** Запись дневника. Продукт хранится снимком, чтобы удаление из базы не ломало историю. */
+/* снимок продукта сохраняет историю при изменении справочника */
 export interface Entry {
   id: string;
-  date: string; // YYYY-MM-DD
+  date: string; // yyyy-mm-dd
   meal: MealType;
   food: Food;
   grams: number;
+  updatedAt: string;
 }
 
 export interface Profile {
   name: string;
   sex: Sex;
-  birthDate: string; // YYYY-MM-DD
+  birthDate: string; // yyyy-mm-dd
   height: number; // см
   weight: number; // кг
   targetWeight: number; // кг
@@ -57,17 +58,19 @@ export interface Macros {
 
 export interface Settings {
   theme: Theme;
-  /** Доли калорий в процентах, в сумме 100. */
+  /* доли калорий в сумме дают 100 процентов */
   ratio: { protein: number; fat: number; carbs: number };
-  /** Ручная норма КБЖУ; если задана — заменяет расчётную. */
+  /* ручная норма заменяет расчётную */
   manualTargets: Macros | null;
   waterGoal: number; // мл
   reminders: { meal: boolean; water: boolean; weight: boolean; time: string };
 }
 
 export interface User {
+  id: string;
   email: string;
   name: string;
+  hasProfile: boolean;
 }
 
 export interface AppState {

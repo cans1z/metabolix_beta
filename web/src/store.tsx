@@ -1,165 +1,328 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { SEED_FOODS } from './data/foods';
-import { addDays, today, uid } from './lib/util';
-import type { AppState, Entry, Food, MealType, Profile, Recipe, Settings } from './types';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { ApiClient, ApiError, type AuthResponse } from './lib/api';
+import { today } from './lib/util';
+import type { AppState, Entry, Food, MealType, Profile, Recipe, Settings, User } from './types';
 
-const KEY = 'metabolix:v1';
-
-const initial: AppState = {
-  user: null,
-  guest: false,
-  profile: null,
-  foods: SEED_FOODS,
-  recipes: [],
-  entries: [],
-  favorites: [],
-  recents: [],
-  water: {},
-  weights: {},
-  settings: {
-    theme: 'system',
-    ratio: { protein: 30, fat: 30, carbs: 40 },
-    manualTargets: null,
-    waterGoal: 2000,
-    reminders: { meal: true, water: false, weight: false, time: '09:00' },
-  },
-};
-
-function load(): AppState {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<AppState>;
-      return { ...initial, ...saved, settings: { ...initial.settings, ...saved.settings } };
-    }
-  } catch {
-    // повреждённые данные — начинаем с чистого состояния
-  }
-  return initial;
+export interface FoodPage {
+  items: Food[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
-type Updater = (fn: (s: AppState) => AppState) => void;
+interface History {
+  diary: Entry[];
+  weights: { date: string; kg: number }[];
+  water: { date: string; ml: number }[];
+}
 
-function actions(set: Updater) {
+function emptyState(): AppState {
   return {
-    login: (email: string, name?: string) =>
-      set((s) => ({ ...s, guest: false, user: { email, name: name || s.profile?.name || email.split('@')[0] } })),
-    loginGuest: () => set((s) => ({ ...s, guest: true })),
-    logout: () => set((s) => ({ ...s, user: null, guest: false })),
-
-    saveProfile: (profile: Profile) =>
-      set((s) => ({
-        ...s,
-        profile,
-        weights: { ...s.weights, [today()]: profile.weight },
-      })),
-    updateSettings: (patch: Partial<Settings>) => set((s) => ({ ...s, settings: { ...s.settings, ...patch } })),
-
-    addEntry: (date: string, meal: MealType, food: Food, grams: number) =>
-      set((s) => ({
-        ...s,
-        entries: [...s.entries, { id: uid(), date, meal, food, grams }],
-        recents: [food.id, ...s.recents.filter((id) => id !== food.id)].slice(0, 30),
-      })),
-    updateEntry: (id: string, grams: number) =>
-      set((s) => ({ ...s, entries: s.entries.map((e) => (e.id === id ? { ...e, grams } : e)) })),
-    removeEntry: (id: string) => set((s) => ({ ...s, entries: s.entries.filter((e) => e.id !== id) })),
-    copyMeal: (from: string, meal: MealType, to: string) =>
-      set((s) => ({
-        ...s,
-        entries: [
-          ...s.entries,
-          ...s.entries
-            .filter((e) => e.date === from && e.meal === meal)
-            .map((e): Entry => ({ ...e, id: uid(), date: to })),
-        ],
-      })),
-
-    saveFood: (food: Food) =>
-      set((s) => ({
-        ...s,
-        foods: s.foods.some((f) => f.id === food.id)
-          ? s.foods.map((f) => (f.id === food.id ? food : f))
-          : [food, ...s.foods],
-      })),
-    removeFood: (id: string) =>
-      set((s) => ({
-        ...s,
-        foods: s.foods.filter((f) => f.id !== id),
-        favorites: s.favorites.filter((x) => x !== id),
-        recents: s.recents.filter((x) => x !== id),
-      })),
-    toggleFavorite: (id: string) =>
-      set((s) => ({
-        ...s,
-        favorites: s.favorites.includes(id) ? s.favorites.filter((x) => x !== id) : [id, ...s.favorites],
-      })),
-
-    saveRecipe: (recipe: Recipe) =>
-      set((s) => ({
-        ...s,
-        recipes: s.recipes.some((r) => r.id === recipe.id)
-          ? s.recipes.map((r) => (r.id === recipe.id ? recipe : r))
-          : [recipe, ...s.recipes],
-      })),
-    removeRecipe: (id: string) => set((s) => ({ ...s, recipes: s.recipes.filter((r) => r.id !== id) })),
-
-    addWater: (date: string, ml: number) =>
-      set((s) => ({ ...s, water: { ...s.water, [date]: Math.max(0, (s.water[date] ?? 0) + ml) } })),
-
-    setWeight: (date: string, kg: number) =>
-      set((s) => {
-        const weights = { ...s.weights, [date]: kg };
-        const latest = Object.keys(weights).sort().pop();
-        return {
-          ...s,
-          weights,
-          profile: s.profile && latest === date ? { ...s.profile, weight: kg } : s.profile,
-        };
-      }),
-    removeWeight: (date: string) =>
-      set((s) => {
-        const weights = { ...s.weights };
-        delete weights[date];
-        return { ...s, weights };
-      }),
-
-    /** Заполняет две недели дневника и веса случайными данными для демонстрации. */
-    seedDemo: () =>
-      set((s) => {
-        const pick = () => s.foods[Math.floor(Math.random() * s.foods.length)];
-        const entries: Entry[] = [];
-        const weights = { ...s.weights };
-        const water = { ...s.water };
-        const base = s.profile?.weight ?? 75;
-        for (let i = 13; i >= 0; i--) {
-          const date = addDays(today(), -i);
-          (['breakfast', 'lunch', 'dinner', 'snack'] as MealType[]).forEach((meal) => {
-            const n = meal === 'snack' ? 1 : 3;
-            for (let k = 0; k < n; k++) {
-              const food = pick();
-              entries.push({ id: uid(), date, meal, food, grams: food.portion ?? 150 });
-            }
-          });
-          weights[date] = Math.round((base + i * 0.12 + (Math.random() - 0.5) * 0.6) * 10) / 10;
-          water[date] = 1000 + Math.round(Math.random() * 5) * 250;
-        }
-        const profile = s.profile && { ...s.profile, weight: weights[today()] };
-        return { ...s, entries: [...s.entries, ...entries], weights, water, profile };
-      }),
-    resetAll: () => set(() => initial),
+    user: null, guest: false, profile: null, foods: [], recipes: [], entries: [],
+    favorites: [], recents: [], water: {}, weights: {},
+    settings: {
+      theme: 'system', ratio: { protein: 30, fat: 30, carbs: 40 },
+      manualTargets: null, waterGoal: 2000,
+      reminders: { meal: true, water: false, weight: false, time: '09:00' },
+    },
   };
 }
 
-type Store = { state: AppState } & ReturnType<typeof actions>;
+function distinctFoods(foods: Food[]) {
+  return [...new Map(foods.map((food) => [food.id, food])).values()];
+}
+
+async function loadAccount(api: ApiClient): Promise<AppState> {
+  const user = await api.request<User>('auth/me');
+  const [profile, settings, history, recipes, favorites, recents] = await Promise.all([
+    user.hasProfile ? api.request<Profile>('profile') : Promise.resolve(null),
+    api.request<Settings>('settings'),
+    api.request<History>('sync/pull'),
+    api.request<Recipe[]>('recipes'),
+    api.request<{ foods: Food[]; recipes: Recipe[] }>('favorites'),
+    api.request<Food[]>('foods/recent'),
+  ]);
+  return {
+    user, guest: false, profile, settings, recipes,
+    entries: history.diary.map((entry) => ({ ...entry, food: { ...entry.food, id: entry.food.id ?? '' } })),
+    weights: Object.fromEntries(history.weights.map((record) => [record.date, record.kg])),
+    water: Object.fromEntries(history.water.map((record) => [record.date, record.ml])),
+    foods: distinctFoods([...favorites.foods, ...recents]),
+    favorites: [...favorites.foods.map((food) => food.id), ...favorites.recipes.map((recipe) => 'recipe:' + recipe.id)],
+    recents: recents.map((food) => food.id),
+  };
+}
+
+function withEntries(state: AppState, entries: Entry[]): AppState {
+  const latest = [...entries].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const recents = distinctFoods(latest.slice(0, 300).map((entry) => entry.food)).slice(0, 30);
+  return {
+    ...state, entries, recents: recents.map((food) => food.id),
+    foods: distinctFoods([...recents, ...state.foods]),
+  };
+}
+
+function withWeight(state: AppState, weights: Record<string, number>): AppState {
+  const latest = Object.keys(weights).sort().pop();
+  return {
+    ...state, weights,
+    profile: state.profile && latest ? { ...state.profile, weight: weights[latest] } : state.profile,
+  };
+}
+
+type Update = (change: (state: AppState) => AppState) => void;
+type Run = <T>(action: () => Promise<T>) => Promise<T | undefined>;
+
+function actions(api: ApiClient, update: Update, get: () => AppState, run: Run) {
+  const change = async (action: () => Promise<void>) =>
+    (await run(async () => { await action(); return true; })) ?? false;
+  return {
+    login: (email: string, password: string, name?: string, acceptedTerms = false) => change(async () => {
+      const response = await api.request<AuthResponse>(name === undefined ? 'auth/login' : 'auth/register', {
+        method: 'POST', anonymous: true,
+        body: { email, password, ...(name === undefined ? {} : { name, acceptedTerms }) },
+      });
+      api.save(response);
+      // сохраняем сессию чтобы повторить загрузку после обрыва сети
+      update(() => ({ ...emptyState(), user: response.user }));
+    }),
+    forgotPassword: (email: string) => change(async () => {
+      await api.request('auth/forgot', { method: 'POST', anonymous: true, body: { email } });
+    }),
+    resetPassword: (email: string, code: string, newPassword: string) => change(async () => {
+      await api.request('auth/reset', { method: 'POST', anonymous: true, body: { email, code, newPassword } });
+    }),
+    loginGuest: () => update((state) => ({ ...state, guest: true })),
+    logout: () => change(async () => {
+      try { await api.logout(); } finally {
+        if (!api.hasSession) update(() => emptyState());
+      }
+    }),
+    deleteAccount: (password: string) => change(async () => {
+      await api.request('auth/delete-account', { method: 'POST', body: { password } });
+      api.clear();
+      update(() => emptyState());
+    }),
+    saveProfile: (profile: Profile) => change(async () => {
+      const date = today();
+      const saved = await api.request<Profile>('profile', { method: 'PUT', body: { ...profile, today: date } });
+      update((state) => ({
+        ...state, profile: saved,
+        user: state.user && { ...state.user, name: saved.name, hasProfile: true },
+        weights: { ...state.weights, [date]: profile.weight },
+      }));
+    }),
+    updateSettings: (patch: Partial<Settings>) => change(async () => {
+      const settings = await api.request<Settings>('settings', {
+        method: 'PUT', body: { ...get().settings, ...patch },
+      });
+      update((state) => ({ ...state, settings }));
+    }),
+    addEntry: (id: string, date: string, meal: MealType, food: Food, grams: number) => change(async () => {
+      const saved = await api.request<Entry>('diary', { method: 'POST', body: { id, date, meal, food, grams } });
+      update((state) => withEntries(state, [...state.entries.filter((entry) => entry.id !== saved.id), saved]));
+    }),
+    updateEntry: (id: string, grams: number) => change(async () => {
+      const saved = await api.request<Entry>('diary/' + id, { method: 'PUT', body: { grams } });
+      update((state) => withEntries(state, state.entries.map((entry) => entry.id === id ? saved : entry)));
+    }),
+    removeEntry: (id: string) => change(async () => {
+      await api.request('diary/' + id, { method: 'DELETE' });
+      update((state) => withEntries(state, state.entries.filter((entry) => entry.id !== id)));
+    }),
+    copyMeal: (from: string, meal: MealType, to: string) => change(async () => {
+      const copied = await api.request<Entry[]>('diary/copy', { method: 'POST', body: { from, meal, to } });
+      update((state) => withEntries(state, [...state.entries, ...copied]));
+    }),
+    searchFoods: (query: string, page: number, signal?: AbortSignal) => api.request<FoodPage>(
+      'foods?' + new URLSearchParams({ q: query, page: String(page), pageSize: '30' }), { signal },
+    ),
+    byBarcode: (code: string) => run(async () => {
+      try { return await api.request<Food>('foods/barcode/' + encodeURIComponent(code)); } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    }),
+    saveFood: (food: Food) => run(async () => {
+      const editing = !!food.id;
+      const saved = await api.request<Food>(editing ? 'foods/' + food.id : 'foods', {
+        method: editing ? 'PUT' : 'POST', body: food,
+      });
+      update((state) => ({ ...state, foods: [saved, ...state.foods.filter((item) => item.id !== saved.id)] }));
+      return saved;
+    }),
+    removeFood: (id: string) => change(async () => {
+      await api.request('foods/' + id, { method: 'DELETE' });
+      update((state) => ({
+        ...state, foods: state.foods.filter((food) => food.id !== id),
+        favorites: state.favorites.filter((item) => item !== id),
+      }));
+    }),
+    toggleFavorite: (food: Food) => change(async () => {
+      const removing = get().favorites.includes(food.id);
+      const path = food.id.startsWith('recipe:') ? 'recipes/' + food.id.slice(7) : 'foods/' + food.id;
+      await api.request('favorites/' + path, { method: removing ? 'DELETE' : 'PUT' });
+      update((state) => ({
+        ...state, foods: distinctFoods([...state.foods, food]),
+        favorites: removing ? state.favorites.filter((id) => id !== food.id) : [food.id, ...state.favorites],
+      }));
+    }),
+    saveRecipe: (recipe: Recipe) => change(async () => {
+      const creating = !recipe.id;
+      const saved = await api.request<Recipe>(creating ? 'recipes' : 'recipes/' + recipe.id, {
+        method: creating ? 'POST' : 'PUT', body: { name: recipe.name, items: recipe.items },
+      });
+      update((state) => ({ ...state, recipes: [saved, ...state.recipes.filter((item) => item.id !== saved.id)] }));
+    }),
+    removeRecipe: (id: string) => change(async () => {
+      await api.request('recipes/' + id, { method: 'DELETE' });
+      update((state) => ({
+        ...state, recipes: state.recipes.filter((recipe) => recipe.id !== id),
+        favorites: state.favorites.filter((item) => item !== 'recipe:' + id),
+      }));
+    }),
+    addWater: (date: string, delta: number) => change(async () => {
+      const ml = Math.min(30000, Math.max(0, (get().water[date] ?? 0) + delta));
+      const saved = await api.request<{ ml: number }>('water/' + date, { method: 'PUT', body: { ml } });
+      update((state) => ({ ...state, water: { ...state.water, [date]: saved.ml } }));
+    }),
+    setWeight: (date: string, kg: number) => change(async () => {
+      await api.request('weight/' + date, { method: 'PUT', body: { kg } });
+      update((state) => withWeight(state, { ...state.weights, [date]: kg }));
+    }),
+    removeWeight: (date: string) => change(async () => {
+      await api.request('weight/' + date, { method: 'DELETE' });
+      update((state) => {
+        const weights = { ...state.weights };
+        delete weights[date];
+        return withWeight(state, weights);
+      });
+    }),
+  };
+}
+
+type Store = ReturnType<typeof actions> & {
+  state: AppState;
+  busy: boolean;
+  loading: boolean;
+  loadError: string | null;
+  error: string | null;
+  dismissError: () => void;
+  reload: () => Promise<void>;
+  refresh: () => Promise<void>;
+  catalogRevision: number;
+};
 
 const Ctx = createContext<Store | null>(null);
+const message = (error: unknown) => error instanceof Error ? error.message : 'Не удалось загрузить данные';
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(load);
-  useEffect(() => localStorage.setItem(KEY, JSON.stringify(state)), [state]);
-  const api = useMemo(() => actions(setState), []);
-  const store = useMemo(() => ({ state, ...api }), [state, api]);
+  const [api] = useState(() => new ApiClient());
+  const [state, setState] = useState<AppState>(emptyState);
+  const current = useRef(state);
+  const [busy, setBusy] = useState(false);
+  const working = useRef(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const refreshing = useRef<Promise<void> | null>(null);
+  const booting = useRef<Promise<void> | null>(null);
+
+  const update = useCallback<Update>((change) => {
+    current.current = change(current.current);
+    setState(current.current);
+  }, []);
+
+  const readAccount = useCallback(async () => {
+    const account = await loadAccount(api);
+    update(() => account);
+    setCatalogRevision((revision) => revision + 1);
+  }, [api, update]);
+
+  const reload = useCallback(async () => {
+    if (booting.current) return booting.current;
+    setLoading(true);
+    setLoadError(null);
+    const task = (async () => {
+      try {
+        api.restore();
+        if (api.hasSession) await readAccount();
+      } catch (reason) {
+        if (api.hasSession) setLoadError(message(reason));
+        else setError(message(reason));
+      } finally { setLoading(false); }
+    })();
+    booting.current = task;
+    try { await task; } finally { booting.current = null; }
+  }, [api, readAccount]);
+
+  const refresh = useCallback(async () => {
+    if (!api.hasSession || working.current || booting.current) return;
+    if (refreshing.current) return refreshing.current;
+    const task = (async () => {
+      try { await readAccount(); } catch (reason) { setError(message(reason)); }
+    })();
+    refreshing.current = task;
+    try { await task; } finally { refreshing.current = null; }
+  }, [api, readAccount]);
+
+  const run = useCallback<Run>(async (action) => {
+    if (working.current) return undefined;
+    working.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      await refreshing.current;
+      const result = await action();
+      setCatalogRevision((revision) => revision + 1);
+      return result;
+    } catch (reason) {
+      setError(message(reason));
+      return undefined;
+    } finally {
+      working.current = false;
+      setBusy(false);
+    }
+  }, []);
+
+  const methods = useMemo(() => actions(api, update, () => current.current, run), [api, update, run]);
+  const login = useCallback(async (...args: Parameters<typeof methods.login>) => {
+    if (!await methods.login(...args)) return false;
+    await reload();
+    return true;
+  }, [methods, reload]);
+  const logout = useCallback(async () => {
+    const result = await methods.logout();
+    if (!api.hasSession) setLoadError(null);
+    return result;
+  }, [api, methods]);
+
+  useEffect(() => {
+    api.onExpired = () => { update(() => emptyState()); setLoadError(null); };
+    void reload();
+    return () => { api.onExpired = undefined; };
+  }, [api, reload, update]);
+
+  useEffect(() => {
+    if (!state.user || loading || loadError) return;
+    const visibleRefresh = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    window.addEventListener('focus', visibleRefresh);
+    document.addEventListener('visibilitychange', visibleRefresh);
+    const interval = setInterval(visibleRefresh, 15000);
+    return () => {
+      window.removeEventListener('focus', visibleRefresh);
+      document.removeEventListener('visibilitychange', visibleRefresh);
+      clearInterval(interval);
+    };
+  }, [state.user?.id, loading, loadError, refresh]);
+
+  const store = {
+    state, busy, loading, loadError, error, catalogRevision,
+    ...methods, login, logout, reload, refresh, dismissError: () => setError(null),
+  };
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }
 

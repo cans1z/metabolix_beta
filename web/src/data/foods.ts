@@ -2,7 +2,7 @@ import type { Food } from '../types';
 
 type Row = [name: string, kcal: number, p: number, f: number, c: number, portion?: number, unit?: 'g' | 'ml', barcode?: string];
 
-// Справочные значения на 100 г / 100 мл. Заглушка до подключения серверной базы.
+// старый справочник для локального прототипа
 const ROWS: Row[] = [
   ['Куриная грудка отварная', 137, 29.8, 1.8, 0.5, 150],
   ['Говядина тушёная', 232, 16.8, 18.3, 0, 150],

@@ -17,7 +17,34 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 ];
 
 export function App() {
-  const { state } = useStore();
+  const { busy, loading, loadError, error, dismissError, reload, logout } = useStore();
+  return (
+    <>
+      {error && (
+        <div className="network-error" role="alert">
+          <span>{error}</span>
+          <button className="link" onClick={dismissError}>Закрыть</button>
+        </div>
+      )}
+      {loading ? <div className="center-screen" role="status">Загрузка данных…</div> : loadError ? (
+        <div className="center-screen">
+          <div className="card auth">
+            <p role="alert">{loadError}</p>
+            <button className="btn primary" onClick={() => void reload()}>Повторить</button>
+            <button className="btn" disabled={busy} onClick={() => void logout()}>Выйти</button>
+          </div>
+        </div>
+      ) : (
+        <fieldset className="app-controls" disabled={busy} aria-busy={busy}>
+          <AppView />
+        </fieldset>
+      )}
+    </>
+  );
+}
+
+function AppView() {
+  const { state, refresh } = useStore();
   const [tab, setTab] = useState<Tab>('diary');
 
   useEffect(() => {
@@ -27,7 +54,7 @@ export function App() {
   }, [state.settings.theme]);
 
   if (!state.user) {
-    // Гостю доступен только справочник продуктов.
+    // гостю доступен только справочник продуктов
     return state.guest ? (
       <div className="app">
         <header className="topbar">
@@ -49,12 +76,16 @@ export function App() {
         <Logo />
         <nav className="nav">
           {TABS.map((t) => (
-            <button key={t.id} className={'nav-item' + (tab === t.id ? ' active' : '')} onClick={() => setTab(t.id)}>
+            <button key={t.id} className={'nav-item' + (tab === t.id ? ' active' : '')} onClick={() => {
+              setTab(t.id);
+              void refresh();
+            }}>
               <Icon name={t.icon} />
               <span>{t.label}</span>
             </button>
           ))}
         </nav>
+        <button className="btn small" onClick={() => void refresh()}>Обновить</button>
         <span className="topbar-user">{state.profile.name || state.user.name}</span>
       </header>
       <main>

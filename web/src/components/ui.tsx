@@ -18,7 +18,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
   );
 }
 
-/** Числовой степпер с необязательным слайдером — ввод в минимум касаний. */
+/* ввод количества кнопками или ползунком */
 export function Stepper(props: {
   value: number;
   onChange: (v: number) => void;

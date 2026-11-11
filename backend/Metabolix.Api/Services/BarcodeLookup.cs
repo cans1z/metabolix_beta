@@ -3,16 +3,16 @@ using Metabolix.Api.Models;
 
 namespace Metabolix.Api.Services;
 
-/// <summary>Поиск продукта по штрихкоду во внешней базе. null — не найден или база недоступна.</summary>
+/// <summary>поиск штрихкода во внешней базе</summary>
 public interface IBarcodeLookup
 {
-    /// <returns>Карточка без сохранения в БД; <see cref="BarcodeResult.Temporary"/> — сбой сети, кэшировать «не найдено» нельзя.</returns>
+    /// <returns>при временном сбое результат не кэшируем</returns>
     Task<BarcodeResult> FindAsync(string barcode, CancellationToken ct = default);
 }
 
 public record BarcodeResult(Food? Food, bool Temporary = false);
 
-/// <summary>Open Food Facts — открытая база продуктов, бесплатная и без ключа.</summary>
+/// <summary>внешний справочник open food facts</summary>
 public class OpenFoodFactsLookup(HttpClient http, ILogger<OpenFoodFactsLookup> log) : IBarcodeLookup
 {
     public async Task<BarcodeResult> FindAsync(string barcode, CancellationToken ct = default)
@@ -34,7 +34,7 @@ public class OpenFoodFactsLookup(HttpClient http, ILogger<OpenFoodFactsLookup> l
         }
     }
 
-    /// <summary>Разбор ответа. Карточки без названия или калорий и с нереальными числами отбрасываем.</summary>
+    /// <summary>отбрасываем карточки без названия калорий или с некорректными числами</summary>
     public static Food? Parse(JsonElement root, string barcode)
     {
         if (!root.TryGetProperty("product", out var product)) return null;
@@ -70,7 +70,7 @@ public class OpenFoodFactsLookup(HttpClient http, ILogger<OpenFoodFactsLookup> l
             ? v.GetString()!.Trim()
             : null;
 
-    // Open Food Facts отдаёт числа то числом, то строкой.
+    // внешняя база может прислать число строкой
     private static double? Number(JsonElement e, string name)
     {
         if (!e.TryGetProperty(name, out var v)) return null;

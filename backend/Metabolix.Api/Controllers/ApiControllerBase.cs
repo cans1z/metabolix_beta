@@ -4,12 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Metabolix.Api.Controllers;
 
-/// <summary>По умолчанию всё закрыто токеном; публичные методы помечены [AllowAnonymous].</summary>
+/// <summary>для публичных методов явно разрешаем анонимный доступ</summary>
 [ApiController]
 [Authorize]
 public abstract class ApiControllerBase : ControllerBase
 {
-    /// <summary>Id берём только из подписанного токена, а не из запроса: чужие данные так не запросить.</summary>
+    /// <summary>id пользователя берём из подписанного токена</summary>
     protected Guid UserId => User.UserIdOrNull() ?? throw new UnauthorizedAccessException();
 
     protected ObjectResult Error(int status, string detail) => Problem(detail: detail, statusCode: status);

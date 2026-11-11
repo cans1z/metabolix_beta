@@ -2,7 +2,7 @@ namespace Metabolix.Api.Services;
 
 public class InvalidImageException(string message) : Exception(message);
 
-/// <summary>Картинки лежат на диске (в Docker — в volume) и раздаются как статика по /uploads.</summary>
+/// <summary>картинки храним в volume и отдаём по /uploads</summary>
 public class FileStorage(IConfiguration config, IWebHostEnvironment env)
 {
     public const string UrlPrefix = "/uploads/";
@@ -15,13 +15,13 @@ public class FileStorage(IConfiguration config, IWebHostEnvironment env)
         if (file.Length == 0) throw new InvalidImageException("Файл пуст");
         if (file.Length > MaxBytes) throw new InvalidImageException("Файл больше 5 МБ");
 
-        // Тип определяем по первым байтам файла: имени и Content-Type от клиента верить нельзя.
+        // проверяем тип по содержимому файла
         var header = new byte[12];
         await using var input = file.OpenReadStream();
         await input.ReadAtLeastAsync(header, header.Length, throwOnEndOfStream: false);
         var extension = DetectExtension(header) ?? throw new InvalidImageException("Нужна картинка JPEG, PNG или WebP");
 
-        // Имя случайное: так нельзя подобрать чужой файл или перезаписать существующий.
+        // случайное имя защищает от совпадений и подбора чужих файлов
         Directory.CreateDirectory(Root);
         var name = Guid.NewGuid().ToString("N") + extension;
         input.Position = 0;

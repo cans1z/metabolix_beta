@@ -58,7 +58,7 @@ public static class Mappers
         var weight = items.Sum(i => i.Grams);
         double Per100(double v) => weight > 0 ? Math.Round(v / weight * 100, 1) : 0;
 
-        // Блюдо как продукт: удельная ценность на 100 г, порция — всё блюдо.
+        // пересчитываем блюдо на 100 г а порцией считаем всё блюдо
         var asFood = new FoodDto
         {
             Id = "recipe:" + r.Id,

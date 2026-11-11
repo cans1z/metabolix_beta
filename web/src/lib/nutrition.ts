@@ -22,7 +22,7 @@ export const GOALS: { value: Goal; label: string }[] = [
   { value: 'gain', label: 'Набор массы' },
 ];
 
-/** Поправка к TDEE по цели: −15% похудение, +10% набор. */
+/* дефицит 15 процентов для похудения и профицит 10 для набора */
 const GOAL_ADJ: Record<Goal, number> = { lose: -0.15, maintain: 0, gain: 0.1 };
 
 export const ZERO: Macros = { kcal: 0, protein: 0, fat: 0, carbs: 0 };
@@ -35,7 +35,7 @@ export function ageFrom(birthDate: string): number {
   return age;
 }
 
-/** Основной обмен по формуле Миффлина — Сан Жеора. */
+/* основной обмен по формуле миффлина сан жеора */
 export function bmr(p: Profile): number {
   return 10 * p.weight + 6.25 * p.height - 5 * ageFrom(p.birthDate) + (p.sex === 'male' ? 5 : -161);
 }
@@ -74,7 +74,7 @@ export const recipeWeight = (r: Recipe): number => r.items.reduce((s, i) => s + 
 export const recipeTotal = (r: Recipe): Macros =>
   r.items.reduce((acc, i) => add(acc, macrosFor(i.food, i.grams)), ZERO);
 
-/** Блюдо как продукт: удельная ценность на 100 г, порция — всё блюдо. */
+/* пересчитываем блюдо на 100 г а порцией считаем всё блюдо */
 export function recipeToFood(r: Recipe): Food {
   const w = recipeWeight(r) || 1;
   const t = recipeTotal(r);

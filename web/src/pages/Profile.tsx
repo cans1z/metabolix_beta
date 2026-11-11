@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ProfileForm } from '../components/ProfileForm';
 import { Icon } from '../components/icons';
-import { Field, Segmented, Stepper, Toggle } from '../components/ui';
+import { Field, Modal, Segmented, Stepper, Toggle } from '../components/ui';
 import { MEALS, autoTargets, bmr, macrosFor, tdee } from '../lib/nutrition';
 import { addDays, r0, r1, today } from '../lib/util';
 import { useStore } from '../store';
@@ -25,17 +25,19 @@ function exportCsv(entries: Entry[], from: string, to: string) {
 }
 
 export function Profile() {
-  const { state, saveProfile, updateSettings, logout, seedDemo, resetAll } = useStore();
+  const { state, saveProfile, updateSettings, logout, deleteAccount } = useStore();
   const profile = state.profile!;
   const s = state.settings;
   const auto = autoTargets(profile, s.ratio);
   const [saved, setSaved] = useState(false);
   const [from, setFrom] = useState(addDays(today(), -29));
   const [to, setTo] = useState(today());
+  const [deleting, setDeleting] = useState(false);
+  const [password, setPassword] = useState('');
 
   const setRatio = (protein: number, fat: number) => {
     const p = Math.min(protein, 100 - fat);
-    updateSettings({ ratio: { protein: p, fat, carbs: 100 - p - fat } });
+    return updateSettings({ ratio: { protein: p, fat, carbs: 100 - p - fat } });
   };
   const setManual = (k: keyof Macros, v: number) => updateSettings({ manualTargets: { ...(s.manualTargets ?? auto), [k]: v } });
   const remind = (patch: Partial<typeof s.reminders>) => updateSettings({ reminders: { ...s.reminders, ...patch } });
@@ -58,10 +60,13 @@ export function Profile() {
         <ProfileForm
           initial={profile}
           submitLabel={saved ? 'Сохранено' : 'Сохранить'}
-          onSubmit={(p) => {
-            saveProfile(p);
-            setSaved(true);
-            setTimeout(() => setSaved(false), 1500);
+          onSubmit={async (p) => {
+            const success = await saveProfile(p);
+            if (success) {
+              setSaved(true);
+              setTimeout(() => setSaved(false), 1500);
+            }
+            return success;
           }}
         />
       </div>
@@ -83,10 +88,10 @@ export function Profile() {
           </div>
         </div>
         <Field label={`Белки — ${s.ratio.protein}% · ${auto.protein} г`}>
-          <input type="range" min={10} max={60} step={5} value={s.ratio.protein} onChange={(e) => setRatio(Number(e.target.value), s.ratio.fat)} />
+          <RatioSlider value={s.ratio.protein} onCommit={(value) => setRatio(value, s.ratio.fat)} />
         </Field>
         <Field label={`Жиры — ${s.ratio.fat}% · ${auto.fat} г`}>
-          <input type="range" min={10} max={60} step={5} value={s.ratio.fat} onChange={(e) => setRatio(s.ratio.protein, Number(e.target.value))} />
+          <RatioSlider value={s.ratio.fat} onCommit={(value) => setRatio(s.ratio.protein, value)} />
         </Field>
         <div className="muted small">
           Углеводы — {s.ratio.carbs}% · {auto.carbs} г
@@ -154,14 +159,38 @@ export function Profile() {
           <button className="btn" onClick={() => exportCsv(state.entries, from, to)}>
             Экспорт дневника в CSV
           </button>
-          <button className="btn" onClick={seedDemo}>
-            Заполнить демо-данными
-          </button>
-          <button className="btn danger" onClick={() => confirm('Удалить все данные приложения?') && resetAll()}>
-            Сбросить всё
+          <button className="btn danger" onClick={() => setDeleting(true)}>
+            Удалить аккаунт
           </button>
         </div>
       </div>
+      {deleting && (
+        <Modal title="Удалить аккаунт и его данные с сервера?" onClose={() => { setDeleting(false); setPassword(''); }}>
+          <form className="form" onSubmit={async (event) => {
+            event.preventDefault();
+            const secret = password;
+            setPassword('');
+            await deleteAccount(secret);
+          }}>
+            <Field label="Пароль">
+              <input className="input" type="password" value={password}
+                onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+            </Field>
+            <button className="btn danger" disabled={!password}>Удалить аккаунт</button>
+          </form>
+        </Modal>
+      )}
     </div>
   );
+}
+
+function RatioSlider(props: { value: number; onCommit: (value: number) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(props.value);
+  useEffect(() => setDraft(props.value), [props.value]);
+  const commit = async () => {
+    if (draft !== props.value && !await props.onCommit(draft)) setDraft(props.value);
+  };
+  return <input type="range" min={10} max={60} step={5} value={draft}
+    onChange={(event) => setDraft(Number(event.target.value))}
+    onPointerUp={() => void commit()} onKeyUp={() => void commit()} onBlur={() => void commit()} />;
 }

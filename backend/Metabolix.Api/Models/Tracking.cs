@@ -1,15 +1,12 @@
 namespace Metabolix.Api.Models;
 
-/// <summary>
-/// Поля для офлайн-синхронизации. Записи не удаляются физически, иначе другое устройство
-/// не узнает об удалении.
-/// </summary>
+/// <summary>отметки удаления сохраняем для синхронизации между устройствами</summary>
 public interface ISyncable
 {
-    /// <summary>Когда запись изменили на клиенте. По нему решаются конфликты: новее — побеждает.</summary>
+    /// <summary>время правки на клиенте для разрешения конфликтов</summary>
     DateTime UpdatedAt { get; set; }
 
-    /// <summary>Когда изменение дошло до сервера. По нему клиент забирает новое (курсор pull).</summary>
+    /// <summary>время получения правки сервером для курсора синхронизации</summary>
     DateTime SyncedAt { get; set; }
 
     bool IsDeleted { get; set; }
@@ -17,7 +14,7 @@ public interface ISyncable
 
 public class DiaryEntry : ISyncable
 {
-    /// <summary>Генерирует клиент: так повторная отправка той же записи не создаст дубль.</summary>
+    /// <summary>клиентский id защищает от дублей при повторной отправке</summary>
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid UserId { get; set; }
     public DateOnly Date { get; set; }

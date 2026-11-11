@@ -11,14 +11,14 @@ public interface IGoogleTokenValidator
 {
     bool IsConfigured { get; }
 
-    /// <returns>null, если токен поддельный, просрочен или выдан не нашему приложению.</returns>
+    /// <returns>null если токен не прошёл проверку</returns>
     Task<GoogleUser?> ValidateAsync(string idToken);
 }
 
-/// <summary>Проверяет подпись id_token по ключам Google и что токен выдан нашему client id.</summary>
+/// <summary>проверяем подпись токена и приложение для которого он выдан</summary>
 public class GoogleTokenValidator(IConfiguration config) : IGoogleTokenValidator
 {
-    // Пустая переменная окружения превращается в пустую строку, такие значения отбрасываем.
+    // отбрасываем пустые идентификаторы из переменных окружения
     private readonly string[] _clientIds = (config.GetSection("Google:ClientIds").Get<string[]>() ?? [])
         .Where(id => !string.IsNullOrWhiteSpace(id)).ToArray();
 
@@ -64,7 +64,7 @@ public class SmtpEmailSender(IConfiguration config) : IEmailSender
     }
 }
 
-/// <summary>Без SMTP письмо пишется в лог, чтобы можно было проверить сброс пароля локально.</summary>
+/// <summary>без smtp выводим письмо в лог для локальной проверки</summary>
 public class LogEmailSender(ILogger<LogEmailSender> log) : IEmailSender
 {
     public Task SendAsync(string to, string subject, string body)

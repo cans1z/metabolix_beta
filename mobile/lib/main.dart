@@ -85,7 +85,7 @@ class _Root extends StatelessWidget {
       );
     }
     if (!app.authed) {
-      // Гостю доступен только справочник продуктов.
+      // гостю доступен только справочник продуктов
       return app.guest ? const FoodsScreen() : const AuthScreen();
     }
     if (app.profile == null) return const OnboardingScreen();

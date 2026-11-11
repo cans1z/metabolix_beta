@@ -3,20 +3,17 @@ using StackExchange.Redis;
 
 namespace Metabolix.Api.Services;
 
-/// <summary>
-/// Обёртка над Redis для кэша и счётчиков. Если Redis недоступен, поиск идёт в базу напрямую,
-/// а лимиты пропускают запрос: падение кэша не должно класть всё приложение.
-/// </summary>
+/// <summary>при сбое кэша поиск читает из базы а ограничения запросов пропускаются</summary>
 public class RedisStore(IConnectionMultiplexer redis, ILogger<RedisStore> log)
 {
-    /// <summary>Для данных, без которых не обойтись (токены, коды). Без соединения сразу ошибка, а клиент получает 503.</summary>
+    /// <summary>для токенов и кодов восстановления соединение с редисом обязательно</summary>
     public IDatabase Db => redis.IsConnected
         ? redis.GetDatabase()
         : throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "Redis недоступен");
 
     public async Task<T?> GetJsonAsync<T>(string key) where T : class
     {
-        // Без соединения не ждём таймаута: поиск должен укладываться в 2 секунды (п. 5.2 ТЗ).
+        // при обрыве соединения сразу читаем из базы
         if (!redis.IsConnected) return null;
         try
         {
@@ -43,7 +40,7 @@ public class RedisStore(IConnectionMultiplexer redis, ILogger<RedisStore> log)
         }
     }
 
-    /// <summary>Считает попытку в окне времени. false — лимит исчерпан.</summary>
+    /// <summary>считаем попытки за заданное время</summary>
     public async Task<bool> TryHitAsync(string key, int limit, TimeSpan window)
     {
         if (!redis.IsConnected) return true;

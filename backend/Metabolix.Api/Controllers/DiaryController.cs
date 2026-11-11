@@ -12,7 +12,7 @@ public class DiaryController(AppDbContext db) : ApiControllerBase
 {
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 
-    /// <summary>Всё про один день: записи, итоги, норма, остаток и вода.</summary>
+    /// <summary>дневник и итоги за день</summary>
     [HttpGet("{date}")]
     public async Task<DayDto> Day(DateOnly date)
     {
@@ -43,7 +43,7 @@ public class DiaryController(AppDbContext db) : ApiControllerBase
             var existing = await db.DiaryEntries.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
             if (existing != null)
             {
-                // Клиент повторил запрос после обрыва сети — отвечаем той же записью вместо дубля.
+                // при повторном запросе возвращаем уже созданную запись
                 return existing.UserId == UserId && !existing.IsDeleted
                     ? existing.ToDto()
                     : Error(409, "Запись с таким id уже есть");
@@ -81,7 +81,7 @@ public class DiaryController(AppDbContext db) : ApiControllerBase
         return entry.ToDto();
     }
 
-    /// <summary>Мягкое удаление: другие устройства узнают о нём при синхронизации.</summary>
+    /// <summary>сохраняем отметку удаления для синхронизации с другими устройствами</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
@@ -94,7 +94,7 @@ public class DiaryController(AppDbContext db) : ApiControllerBase
         return NoContent();
     }
 
-    /// <summary>Копирует приём пищи на другую дату.</summary>
+    /// <summary>копирование приёма пищи на другую дату</summary>
     [HttpPost("copy")]
     public async Task<ActionResult<List<EntryDto>>> Copy(CopyMealRequest r)
     {

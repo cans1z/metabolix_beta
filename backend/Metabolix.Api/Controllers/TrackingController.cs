@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Metabolix.Api.Controllers;
 
-/// <summary>Вес, вода, статистика за период и экспорт.</summary>
+/// <summary>учёт веса воды и статистики</summary>
 [Route("api")]
 public class TrackingController(AppDbContext db, WeightService weights) : ApiControllerBase
 {
@@ -48,7 +48,7 @@ public class TrackingController(AppDbContext db, WeightService weights) : ApiCon
             .Select(w => new WaterDto(w.Date, w.Ml))
             .ToListAsync();
 
-    /// <summary>Абсолютное значение за день, а не прибавка: повторный запрос ничего не сломает.</summary>
+    /// <summary>передаём итог за день чтобы повторный запрос не прибавлял воду дважды</summary>
     [HttpPut("water/{date}")]
     public async Task<WaterDto> SetWater(DateOnly date, SetWaterRequest r)
     {
@@ -81,7 +81,7 @@ public class TrackingController(AppDbContext db, WeightService weights) : ApiCon
                 g.Sum(e => e.Food.Carbs * e.Grams / 100)))
             .ToListAsync();
 
-        // Пустые дни тоже нужны графику, но в средние они не входят.
+        // пустые дни показываем на графике и пропускаем при расчёте среднего
         var byDate = logged.ToDictionary(d => d.Date);
         var days = new List<DayStatsDto>();
         for (var d = from; d <= to; d = d.AddDays(1))
@@ -104,7 +104,7 @@ public class TrackingController(AppDbContext db, WeightService weights) : ApiCon
             profile == null ? null : Nutrition.Bmi(profile.Weight, profile.Height));
     }
 
-    /// <summary>Экспорт дневника в CSV (п. 5.1.7 ТЗ). BOM и «;» нужны, чтобы русский Excel открыл файл правильно.</summary>
+    /// <summary>bom и разделитель нужны для открытия csv в экселе</summary>
     [HttpGet("export")]
     public async Task<IActionResult> Export(DateOnly from, DateOnly to)
     {
@@ -150,7 +150,7 @@ public class TrackingController(AppDbContext db, WeightService weights) : ApiCon
         _ => "Перекусы",
     };
 
-    // Excel выполняет ячейки, начинающиеся с = + - @, как формулы, поэтому экранируем.
+    // экранируем названия которые эксель может принять за формулы
     private static string CsvText(string value)
     {
         var safe = value.Length > 0 && "=+-@".Contains(value[0]) ? "'" + value : value;

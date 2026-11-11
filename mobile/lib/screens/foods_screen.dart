@@ -17,8 +17,7 @@ class FoodsScreen extends StatelessWidget {
     if (food != null && context.mounted) showFoodCard(context, food);
   }
 
-  /// Поиск по штрихкоду. Код пока вводится вручную — камера подключится
-  /// вместе с пакетом сканера (например, mobile_scanner).
+  /// поиск по штрихкоду пока код вводится вручную
   Future<void> _scan(BuildContext context) async {
     final app = AppScope.of(context);
     var input = '';
@@ -107,7 +106,6 @@ class FoodsScreen extends StatelessWidget {
   }
 }
 
-/// Создание и редактирование пользовательского блюда.
 class RecipeScreen extends StatefulWidget {
   final Recipe? recipe;
   const RecipeScreen({super.key, this.recipe});
@@ -117,7 +115,7 @@ class RecipeScreen extends StatefulWidget {
 }
 
 class _RecipeScreenState extends State<RecipeScreen> {
-  // Работаем с копией, чтобы «назад» без сохранения ничего не меняло.
+  // редактируем копию до сохранения
   late final Recipe recipe =
       widget.recipe == null ? Recipe(id: '') : Recipe.fromJson(widget.recipe!.toJson());
 

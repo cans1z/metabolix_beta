@@ -24,17 +24,15 @@ var jwt = config.GetSection("Jwt").Get<JwtOptions>() ?? new JwtOptions();
 jwt.Validate(builder.Environment);
 builder.Services.AddSingleton(jwt);
 
-// База и Redis
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(config.GetConnectionString("Postgres")));
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
 {
     var options = ConfigurationOptions.Parse(config.GetConnectionString("Redis")!);
-    options.AbortOnConnectFail = false; // приложение стартует и без Redis, а подключится, когда он поднимется
-    options.AsyncTimeout = 1000; // локальный Redis отвечает за миллисекунды; 5 секунд по умолчанию — слишком долго
+    options.AbortOnConnectFail = false; // подключаемся к редису когда он станет доступен
+    options.AsyncTimeout = 1000; // сокращаем ожидание ответа от локального редиса
     return ConnectionMultiplexer.Connect(options);
 });
 
-// Наши сервисы
 builder.Services.AddSingleton<RedisStore>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<FileStorage>();
@@ -53,7 +51,6 @@ builder.Services.AddHttpClient<IBarcodeLookup, OpenFoodFactsLookup>(http =>
     http.DefaultRequestHeaders.UserAgent.ParseAdd("Metabolix/0.1 (student project)");
 });
 
-// Проверка токена на каждом запросе
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(o =>
 {
     o.MapInboundClaims = false;
@@ -66,7 +63,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
     o.Events = new JwtBearerEvents
     {
-        // Токен удалённого пользователя ещё до 15 минут выглядит валидным — отсекаем его здесь.
+        // проверяем существование пользователя даже при действующем токене
         OnTokenValidated = async ctx =>
         {
             var id = ctx.Principal!.UserIdOrNull();
@@ -79,7 +76,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers().AddJsonOptions(o =>
-    // enum в JSON строкой: "breakfast", а не 0. Так же, как у клиентов.
+    // передаём enum строками как ожидают клиенты
     o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false)));
 builder.Services.AddProblemDetails();
 
@@ -108,7 +105,7 @@ var app = builder.Build();
 
 await DbInitializer.InitAsync(app.Services);
 
-// За nginx настоящий IP клиента приходит в заголовке. Без прокси заголовку верить нельзя: его подделают и обойдут лимиты.
+// доверяем заголовкам с ip только при работе через прокси
 if (config.GetValue<bool>("Proxy:Trust"))
 {
     var forwarded = new ForwardedHeadersOptions { ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto };
@@ -138,7 +135,7 @@ app.UseExceptionHandler(errors => errors.Run(async ctx =>
 
 if (app.Environment.IsDevelopment())
 {
-    // Документация и «песочница» запросов: /scalar/v1
+    // документация api доступна по /scalar/v1
     app.MapOpenApi();
     app.MapScalarApiReference();
 }

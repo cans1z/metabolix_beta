@@ -358,7 +358,7 @@ class _WeightPainter extends CustomPainter {
   bool shouldRepaint(_WeightPainter old) => true;
 }
 
-/// Шкала ИМТ 15–35 с границами 18,5 / 25 / 30.
+/// границы категорий имт на шкале
 class _BmiPainter extends CustomPainter {
   final double value;
   final Color normal, marker;

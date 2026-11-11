@@ -115,7 +115,7 @@ public class AuthTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await client.PostAsJsonAsync("/api/auth/refresh", new { refreshToken = user.Auth.RefreshToken })).StatusCode);
 
-        // Код одноразовый.
+        // код одноразовый
         var again = await client.PostAsJsonAsync("/api/auth/reset", new { email = user.Email, code, newPassword = "brand-new-2" });
         Assert.Equal(HttpStatusCode.BadRequest, again.StatusCode);
     }
@@ -153,7 +153,7 @@ public class AuthTests(ApiFixture api)
         Assert.Equal(HttpStatusCode.OK,
             (await client.PostAsJsonAsync("/api/auth/google", new { idToken = $"{subject}|{email}|true", acceptedTerms = true })).StatusCode);
 
-        // Повторный вход согласия уже не требует.
+        // повторный вход согласия уже не требует
         Assert.Equal(HttpStatusCode.OK,
             (await client.PostAsJsonAsync("/api/auth/google", new { idToken = $"{subject}|{email}|true" })).StatusCode);
     }

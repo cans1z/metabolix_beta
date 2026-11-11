@@ -44,12 +44,12 @@ public class ProfileController(AppDbContext db, WeightService weights, FileStora
         profile.Goal = r.Goal;
         await db.SaveChangesAsync();
 
-        // Вес из анкеты попадает и в историю веса.
+        // вес из анкеты попадает и в историю веса
         await weights.SetAsync(UserId, r.Today ?? Today, r.Weight);
         return ToDto(profile, user);
     }
 
-    /// <summary>Основной обмен, TDEE, норма КБЖУ и ИМТ.</summary>
+    /// <summary>основной обмен, tdee, норма кбжу и имт</summary>
     [HttpGet("profile/norm")]
     public async Task<ActionResult<NormDto>> Norm()
     {

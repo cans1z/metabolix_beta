@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { recipeTotal, recipeToFood, recipeWeight } from '../lib/nutrition';
-import { r0, r1, uid } from '../lib/util';
+import { r0, r1 } from '../lib/util';
 import { useStore } from '../store';
 import type { Recipe } from '../types';
 import { FoodPicker } from './food';
@@ -9,7 +9,7 @@ import { Field, Modal, Stepper } from './ui';
 
 export function RecipeModal(props: { recipe?: Recipe; onClose: () => void }) {
   const { saveRecipe, removeRecipe } = useStore();
-  const [recipe, setRecipe] = useState<Recipe>(props.recipe ?? { id: uid(), name: '', items: [] });
+  const [recipe, setRecipe] = useState<Recipe>(props.recipe ?? { id: '', name: '', items: [] });
   const [picking, setPicking] = useState(false);
 
   const total = recipeTotal(recipe);
@@ -78,9 +78,8 @@ export function RecipeModal(props: { recipe?: Recipe; onClose: () => void }) {
           {props.recipe && (
             <button
               className="btn danger"
-              onClick={() => {
-                removeRecipe(recipe.id);
-                props.onClose();
+              onClick={async () => {
+                if (await removeRecipe(recipe.id)) props.onClose();
               }}
             >
               Удалить
@@ -89,9 +88,8 @@ export function RecipeModal(props: { recipe?: Recipe; onClose: () => void }) {
           <button
             className="btn primary"
             disabled={!valid}
-            onClick={() => {
-              saveRecipe({ ...recipe, name: recipe.name.trim() });
-              props.onClose();
+            onClick={async () => {
+              if (await saveRecipe({ ...recipe, name: recipe.name.trim() })) props.onClose();
             }}
           >
             Сохранить

@@ -17,7 +17,7 @@ const activityLevels = [
 
 const goalLabels = {'lose': 'Похудение', 'maintain': 'Поддержание', 'gain': 'Набор массы'};
 
-/// Поправка к TDEE по цели: −15% похудение, +10% набор.
+/// дефицит 15 процентов для похудения и профицит 10 для набора
 const _goalAdj = {'lose': -0.15, 'maintain': 0.0, 'gain': 0.10};
 
 int ageFrom(String birthDate) {
@@ -28,7 +28,7 @@ int ageFrom(String birthDate) {
   return age;
 }
 
-/// Основной обмен по формуле Миффлина — Сан Жеора.
+/// основной обмен по формуле миффлина сан жеора
 double bmr(Profile p) =>
     10 * p.weight + 6.25 * p.height - 5 * ageFrom(p.birthDate) + (p.male ? 5 : -161);
 

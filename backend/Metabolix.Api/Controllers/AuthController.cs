@@ -47,7 +47,7 @@ public class AuthController(
         user.PasswordHash = hasher.HashPassword(user, r.Password);
         db.Users.Add(user);
 
-        // Сначала токены: если Redis недоступен, аккаунт не создастся и повторная попытка не упрётся в «почта занята».
+        // при сбое редиса аккаунт не сохраняем чтобы можно было повторить регистрацию
         var response = await IssueAsync(user);
         await db.SaveChangesAsync();
         return response;
@@ -59,12 +59,12 @@ public class AuthController(
     {
         var address = NormalizeEmail(r.Email);
 
-        // Защита от перебора: не больше 10 попыток на пару «адрес + почта» за 15 минут.
+        // не больше 10 попыток на одну пару ip и почты за 15 минут
         if (!await store.TryHitAsync($"login:{ClientIp}:{address}", MaxLoginAttempts, LoginWindow))
             return Error(429, "Слишком много попыток входа, подождите 15 минут");
 
         var user = await db.Users.FirstOrDefaultAsync(u => u.Email == address);
-        // Ответ одинаковый, чтобы нельзя было узнать, зарегистрирована ли почта.
+        // одинаковый ответ скрывает наличие аккаунта
         if (user?.PasswordHash == null
             || hasher.VerifyHashedPassword(user, user.PasswordHash, r.Password) == PasswordVerificationResult.Failed)
             return Error(401, "Неверная почта или пароль");
@@ -85,7 +85,7 @@ public class AuthController(
         var user = await db.Users.FirstOrDefaultAsync(u => u.GoogleId == payload.Subject);
         if (user == null)
         {
-            // Привязываем к существующему аккаунту только подтверждённую почту, иначе это захват чужого аккаунта.
+            // привязываем к существующему аккаунту только подтверждённую почту
             if (!payload.EmailVerified) return Error(401, "Почта Google не подтверждена");
 
             var address = NormalizeEmail(payload.Email);
@@ -113,7 +113,7 @@ public class AuthController(
         return response;
     }
 
-    /// <summary>Меняет refresh-токен на новую пару. Старый после этого не работает.</summary>
+    /// <summary>выдаём новую пару токенов и отзываем старый refresh токен</summary>
     [AllowAnonymous]
     [HttpPost("refresh")]
     public async Task<ActionResult<AuthResponse>> Refresh(RefreshRequest r)
@@ -142,7 +142,7 @@ public class AuthController(
         return await ToDtoAsync(user!);
     }
 
-    /// <summary>Всегда отвечает 204: иначе по ответу можно узнать, чья почта зарегистрирована.</summary>
+    /// <summary>одинаковый ответ скрывает наличие аккаунта</summary>
     [AllowAnonymous]
     [HttpPost("forgot")]
     public async Task<IActionResult> Forgot(ForgotPasswordRequest r)
@@ -165,7 +165,7 @@ public class AuthController(
         }
         catch (Exception e)
         {
-            // Клиенту ошибку не показываем по той же причине, что и выше.
+            // ошибку отправки пишем только в лог
             log.LogError(e, "Не удалось отправить письмо восстановления");
         }
         return NoContent();
@@ -181,7 +181,6 @@ public class AuthController(
         var stored = await store.Db.StringGetAsync($"reset:{address}");
         if (stored.IsNull) return invalid;
 
-        // 6 цифр легко перебрать, поэтому после 5 ошибок код сгорает.
         if (!await store.TryHitAsync($"reset-attempts:{address}", MaxResetAttempts, ResetCodeTtl))
         {
             await store.Db.KeyDeleteAsync($"reset:{address}");
@@ -200,7 +199,7 @@ public class AuthController(
         return NoContent();
     }
 
-    /// <summary>Полное удаление аккаунта (п. 5.7 ТЗ). Связанные данные удаляет каскад в БД.</summary>
+    /// <summary>удаление аккаунта</summary>
     [HttpPost("delete-account")]
     public async Task<IActionResult> DeleteAccount(DeleteAccountRequest r)
     {

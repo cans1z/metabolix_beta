@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ACTIVITY, GOALS } from '../lib/nutrition';
 import type { Profile } from '../types';
 import { Field, Segmented, Stepper } from './ui';
@@ -14,15 +14,20 @@ export const DEFAULT_PROFILE: Profile = {
   goal: 'lose',
 };
 
-export function ProfileForm(props: { initial: Profile; submitLabel: string; onSubmit: (p: Profile) => void }) {
+export function ProfileForm(props: { initial: Profile; submitLabel: string; onSubmit: (p: Profile) => Promise<boolean> }) {
   const [p, setP] = useState<Profile>(props.initial);
-  const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((prev) => ({ ...prev, [k]: v }));
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setP(props.initial); }, [props.initial, dirty]);
+  const set = <K extends keyof Profile>(k: K, v: Profile[K]) => {
+    setDirty(true);
+    setP((prev) => ({ ...prev, [k]: v }));
+  };
   return (
     <form
       className="form"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        props.onSubmit(p);
+        if (await props.onSubmit(p)) setDirty(false);
       }}
     >
       <div className="grid2">

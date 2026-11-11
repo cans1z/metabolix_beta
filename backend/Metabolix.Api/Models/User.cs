@@ -6,17 +6,17 @@ public class User
     public required string Email { get; set; }
     public string Name { get; set; } = "";
 
-    /// <summary>null — аккаунт создан через Google и пароля пока нет.</summary>
+    /// <summary>у аккаунта через гугл пароль может отсутствовать</summary>
     public string? PasswordHash { get; set; }
     public string? GoogleId { get; set; }
     public string? AvatarUrl { get; set; }
 
-    /// <summary>Когда пользователь согласился на обработку персональных данных (152-ФЗ).</summary>
+    /// <summary>дата согласия на обработку персональных данных</summary>
     public DateTime ConsentAt { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>Анкета. Появляется после первого входа, отсюда считается норма КБЖУ.</summary>
+/// <summary>по анкете считаем норму кбжу</summary>
 public class Profile
 {
     public Guid UserId { get; set; }
@@ -37,7 +37,7 @@ public class UserSettings
     public int RatioFat { get; set; } = 30;
     public int RatioCarbs { get; set; } = 40;
 
-    /// <summary>Ручная норма. Если задана — заменяет расчётную.</summary>
+    /// <summary>ручная норма заменяет расчётную</summary>
     public double? ManualKcal { get; set; }
     public double? ManualProtein { get; set; }
     public double? ManualFat { get; set; }

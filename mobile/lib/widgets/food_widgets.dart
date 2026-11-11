@@ -11,8 +11,8 @@ import 'common.dart';
 String foodSubtitle(Food f) =>
     '${f0(f.kcal)} ккал · Б ${f1(f.protein)} · Ж ${f1(f.fat)} · У ${f1(f.carbs)} · на 100 ${f.unit}';
 
-/// Поиск по базе с вкладками «недавние / избранное / блюда».
-/// Родитель должен ограничить высоту (список занимает всё свободное место).
+/// поиск продуктов и выбор из сохранённых
+
 class FoodPicker extends StatefulWidget {
   final ValueChanged<Food> onPick;
   final ValueChanged<String>? onEditRecipe;
@@ -226,7 +226,7 @@ Future<Food?> showFoodPicker(BuildContext context, {String title = 'Выбери
   );
 }
 
-/// Ввод количества: граммы или стандартные порции, с пересчётом КБЖУ.
+/// пересчёт кбжу по весу или числу порций
 class AmountPicker extends StatefulWidget {
   final Food food;
   final double grams;
@@ -293,7 +293,6 @@ class _AmountPickerState extends State<AmountPicker> {
   }
 }
 
-/// Карточка продукта с добавлением в дневник.
 Future<void> showFoodCard(BuildContext context, Food food, {String? date, MealType? meal}) {
   return showModalBottomSheet<void>(
     context: context,
@@ -382,7 +381,7 @@ class _FoodCardState extends State<_FoodCard> {
   }
 }
 
-/// Создание карточки продукта вручную (в т.ч. когда штрихкод не найден).
+/// создание своего продукта
 class FoodFormScreen extends StatefulWidget {
   final String? barcode;
   const FoodFormScreen({super.key, this.barcode});

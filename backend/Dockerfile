@@ -1,4 +1,4 @@
-# Сборка идёт в образе с SDK, а в итоговый образ попадает только готовое приложение: так он в разы меньше.
+# собираем с sdk и переносим готовое приложение в runtime
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY Metabolix.Api/Metabolix.Api.csproj Metabolix.Api/
@@ -9,7 +9,7 @@ RUN dotnet publish Metabolix.Api/Metabolix.Api.csproj -c Release -o /app --no-re
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app
 COPY --from=build /app .
-# Сервер работает не от root; папка картинок должна принадлежать этому пользователю.
+# папка загрузок принадлежит пользователю приложения
 RUN mkdir -p /app/uploads && chown -R $APP_UID /app/uploads
 USER $APP_UID
 EXPOSE 8080

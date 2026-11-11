@@ -21,7 +21,7 @@ class Macros {
       Macros(_d(j['kcal']), _d(j['protein']), _d(j['fat']), _d(j['carbs']));
 }
 
-/// Карточка продукта. Пищевая ценность — на 100 г / 100 мл.
+/// пищевая ценность на 100 г или 100 мл
 class Food {
   final String id, name;
   final double kcal, protein, fat, carbs;
@@ -97,7 +97,7 @@ class Recipe {
   double get weight => items.fold<double>(0, (s, i) => s + i.grams);
   Macros get total => items.fold<Macros>(Macros.zero, (s, i) => s + i.food.macros(i.grams));
 
-  /// Блюдо как продукт: удельная ценность на 100 г, порция — всё блюдо.
+  /// пересчитываем блюдо на 100 г а порцией считаем всё блюдо
   Food toFood() {
     final w = weight == 0 ? 1.0 : weight;
     final t = total;
@@ -121,7 +121,7 @@ class Recipe {
       );
 }
 
-/// Запись дневника. Продукт хранится снимком, чтобы удаление из базы не ломало историю.
+/// снимок продукта сохраняет историю при изменении справочника
 class Entry {
   final String id, date;
   final MealType meal;
@@ -148,7 +148,7 @@ class Entry {
 class Profile {
   String name;
   bool male;
-  String birthDate; // YYYY-MM-DD
+  String birthDate; // yyyy-mm-dd
   double height, weight, targetWeight, activity;
   String goal; // lose | maintain | gain
 

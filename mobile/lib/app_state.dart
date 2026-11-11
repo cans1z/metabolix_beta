@@ -8,7 +8,7 @@ import 'models.dart';
 import 'nutrition.dart';
 import 'util.dart';
 
-/// Состояние экранов в памяти. Данные аккаунта загружаются и меняются через API.
+/// данные экранов загружаем и сохраняем через api
 class AppState extends ChangeNotifier {
   final _api = ApiClient();
   bool busy = false;

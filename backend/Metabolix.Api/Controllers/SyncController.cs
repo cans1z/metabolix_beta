@@ -7,14 +7,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Metabolix.Api.Controllers;
 
-/// <summary>
-/// Офлайн-синхронизация дневника, веса и воды (п. 5.2 ТЗ). Цикл на клиенте: сначала push своих
-/// изменений, затем pull чужих. Конфликты решает правило «побеждает более позднее изменение».
-/// </summary>
+/// <summary>сначала принимаем изменения клиента затем отдаём серверные</summary>
 [Route("api/sync")]
 public class SyncController(AppDbContext db, WeightService weights) : ApiControllerBase
 {
-    /// <summary>Записи, изменившиеся за это время до начала pull, отдаём повторно на случай незавершённых транзакций.</summary>
+    /// <summary>повторяем последние изменения на случай незавершённых транзакций</summary>
     private static readonly TimeSpan CursorOverlap = TimeSpan.FromSeconds(5);
 
     [HttpPost("push")]
@@ -26,7 +23,7 @@ public class SyncController(AppDbContext db, WeightService weights) : ApiControl
         var rejected = new List<Guid>();
 
         var ids = r.Diary.Select(x => x.Id).ToList();
-        // Ищем без фильтра по пользователю, чтобы заметить чужой id и не перезаписать чужую запись.
+        // проверяем владельца даже у записей с чужим id
         var entries = await db.DiaryEntries.Where(e => ids.Contains(e.Id)).ToDictionaryAsync(e => e.Id);
         foreach (var item in r.Diary)
         {
@@ -84,7 +81,7 @@ public class SyncController(AppDbContext db, WeightService weights) : ApiControl
         return new SyncPushResult(applied, skipped, rejected);
     }
 
-    /// <summary>Всё, что дошло до сервера после since. Без since — вся история без удалённых записей.</summary>
+    /// <summary>без курсора отдаём всю историю кроме удалённых записей</summary>
     [HttpGet("pull")]
     public async Task<SyncPullResult> Pull(DateTime? since)
     {
@@ -107,7 +104,7 @@ public class SyncController(AppDbContext db, WeightService weights) : ApiControl
             ? source.AsNoTracking().Where(x => !x.IsDeleted)
             : source.AsNoTracking().Where(x => x.SyncedAt > since);
 
-    /// <summary>Находит или создаёт запись за дату; null — на сервере версия новее и менять нечего.</summary>
+    /// <summary>пропускаем правку если на сервере версия новее</summary>
     private TRecord? Upsert<TRecord>(Dictionary<DateOnly, TRecord> records, DateOnly date, DateTime clientTime, DateTime now,
         DbSet<TRecord> set, ref int applied, ref int skipped) where TRecord : class, ISyncable, new()
     {
@@ -144,8 +141,8 @@ public class SyncController(AppDbContext db, WeightService weights) : ApiControl
         return record;
     }
 
-    // Если на телефоне часы спешат, такая запись навсегда побеждала бы все последующие.
-    // Округляем до микросекунд, как хранит Postgres: иначе повтор той же отправки выглядел бы как более новая правка.
+    // ограничиваем время серверным чтобы сбитые часы не блокировали новые правки
+    // округляем до точности постгреса чтобы повторный запрос не считался новой правкой
     private static DateTime ClampToNow(DateTime clientTime, DateTime now)
     {
         var utc = clientTime.ToUniversalTime();

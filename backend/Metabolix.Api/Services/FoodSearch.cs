@@ -13,7 +13,7 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
 
     public static string Normalize(string text) => text.Trim().ToLowerInvariant().Replace('ё', 'е');
 
-    /// <summary>"куриная гру" → "куриная:* &amp; гру:*": каждое слово может быть началом слова в названии.</summary>
+    /// <summary>ищем каждое слово по началу</summary>
     public static string? ToTsQuery(string normalized)
     {
         var words = WordRegex().Matches(normalized).Select(m => m.Value + ":*").ToList();
@@ -24,7 +24,7 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
     {
         var normalized = Normalize(query ?? "");
 
-        // Общие и личные карточки должны делить одну пагинацию. Личные результаты не кэшируем.
+        // общие и личные продукты листаем вместе
         if (userId is { } ownerId)
             return await QueryAsync(db.Foods.Where(f => f.OwnerId == null || f.OwnerId == ownerId),
                 normalized, page, pageSize);
@@ -48,7 +48,7 @@ public partial class FoodSearch(AppDbContext db, RedisStore store)
         var matching = foods;
         if (tsQuery != null)
         {
-            // Полнотекстовый поиск со словарём russian понимает падежи, триграммы прощают опечатки.
+            // русский словарь учитывает падежи а триграммы помогают с опечатками
             matching = foods.Where(f => f.SearchVector.Matches(EF.Functions.ToTsQuery("russian", tsQuery))
                                         || EF.Functions.TrigramsWordSimilarity(normalized, f.SearchName) > TypoThreshold);
         }

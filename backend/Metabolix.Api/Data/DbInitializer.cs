@@ -4,7 +4,7 @@ namespace Metabolix.Api.Data;
 
 public static class DbInitializer
 {
-    /// <summary>При старте доводит схему БД до актуальной и заполняет пустой справочник.</summary>
+    /// <summary>при запуске применяем миграции и заполняем пустой справочник</summary>
     public static async Task InitAsync(IServiceProvider services)
     {
         using var scope = services.CreateScope();

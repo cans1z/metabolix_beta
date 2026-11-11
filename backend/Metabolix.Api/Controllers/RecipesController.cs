@@ -48,7 +48,7 @@ public class RecipesController(AppDbContext db, FileStorage files) : ApiControll
         return recipe.ToDto();
     }
 
-    /// <summary>Записи дневника остаются: в них хранится копия блюда на момент добавления.</summary>
+    /// <summary>удаление рецепта сохраняет его снимки в дневнике</summary>
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
